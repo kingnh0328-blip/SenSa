@@ -1,0 +1,673 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>공장 관제 시스템</title>
+
+  <link rel="stylesheet" href="{% static 'monitor/map.css' %}">
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Leaflet Draw CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+</head>
+<body>
+
+<!-- ── 사이드바 ── -->
+<div id="sidebar">
+  <div id="sidebar-header">
+    <h1>🏭 공장 관제 시스템</h1>
+    <p>Factory Safety Monitoring v0.1</p>
+  </div>
+
+  <!-- 이미지 업로드 -->
+  <div class="sidebar-section">
+    <h3>공장 평면도</h3>
+    <div id="upload-area" onclick="document.getElementById('file-input').click()">
+      <div class="upload-icon">📐</div>
+      <strong id="upload-label">이미지 업로드</strong>
+      <p>JPG, PNG 파일을 선택하세요</p>
+    </div>
+    <input type="file" id="file-input" accept="image/*">
+  </div>
+
+  <!-- 레이어 표시 -->
+  <div class="sidebar-section">
+    <h3>레이어</h3>
+    <div class="layer-toggle">
+      <label>⚠️ 지오펜스</label>
+      <label class="toggle-switch">
+        <input type="checkbox" id="layer-geofence" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="layer-toggle">
+      <label>📡 센서</label>
+      <label class="toggle-switch">
+        <input type="checkbox" id="layer-sensor" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="layer-toggle">
+      <label>👷 작업자</label>
+      <label class="toggle-switch">
+        <input type="checkbox" id="layer-worker" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <!-- 지오펜스 목록 -->
+  <div class="sidebar-section" style="border-bottom:none; padding-bottom:0;">
+    <h3>위험 구역 목록</h3>
+  </div>
+  <div id="geofence-list">
+    <p style="font-size:12px; color:#3a3f55; text-align:center; padding:20px;">
+      지오펜스가 없습니다.<br>지도에서 구역을 그려보세요.
+    </p>
+  </div>
+</div>
+
+<!-- ── 지도 영역 ── -->
+<div id="map-container">
+  <div id="map-toolbar">
+    <span>📍 좌표:</span>
+    <span id="coord-display"></span>
+    <button id="draw-fence-btn" onclick="toggleDrawMode()">✏️ 지오펜스 그리기</button>
+    <button id="clear-draw-btn" onclick="clearCurrentDraw()">↩ 취소</button>
+  </div>
+
+  <div id="map"></div>
+  <div id="draw-hint">클릭으로 꼭짓점 추가 → 첫 점 클릭으로 완성 (최소 3개)</div>
+</div>
+
+<!-- ── 지오펜스 저장 모달 ── -->
+<div id="fence-modal">
+  <div class="modal-box">
+    <h2>⚠️ 위험 구역 저장</h2>
+    <div class="form-group">
+      <label>구역명 *</label>
+      <input type="text" id="fence-name" placeholder="예: 위험구역 A">
+    </div>
+    <div class="form-group">
+      <label>구역 유형</label>
+      <select id="fence-type">
+        <option value="danger">위험</option>
+        <option value="caution">주의</option>
+        <option value="restricted">출입금지</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>위험도</label>
+      <select id="fence-risk">
+        <option value="critical">심각</option>
+        <option value="high">높음</option>
+        <option value="medium">보통</option>
+        <option value="low">낮음</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>설명</label>
+      <textarea id="fence-desc" placeholder="구역 설명 (선택)"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">취소</button>
+      <button class="btn-primary" onclick="saveGeoFence()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+// ════════════════════════════════════════════
+// 좌표계 정의
+// ────────────────────────────────────────────
+// 공장 이미지 내부 좌표계:
+//   원점(0,0) = 이미지 좌상단
+//   x축 = 오른쪽 방향 (픽셀 단위)
+//   y축 = 아래쪽 방향 (픽셀 단위)
+//
+// Leaflet CRS.Simple 에서는 [lat, lng] = [y, x] 순서로 사용한다.
+// API 저장 시에는 [[x, y], ...] 형태로 변환하여 저장한다.
+// ════════════════════════════════════════════
+
+// ── 상수 ──
+const ZONE_COLORS = {
+  danger:     '#e74c3c',
+  caution:    '#f1c40f',
+  restricted: '#9b59b6',
+};
+
+const SENSOR_COLORS = {
+  gas:         '#e74c3c',
+  power:       '#f39c12',
+  temperature: '#3498db',
+  motion:      '#2ecc71',
+};
+
+const SENSOR_ICONS = {
+  gas: '💨', power: '⚡', temperature: '🌡️', motion: '🔊',
+};
+
+// ── 상태 ──
+let map = null;
+let imageOverlay = null;
+let imageBounds = null;
+
+let isDrawing = false;
+let drawPoints = [];     // Leaflet LatLng 배열
+let drawMarkers = [];    // 임시 마커
+let drawPolyline = null; // 실시간 선
+let pendingPolygon = null; // 완성된 polygon (저장 전)
+let pendingCoords = [];    // 저장될 좌표 [[x,y],...]
+
+let geofenceLayerGroup = null;
+let sensorLayerGroup = null;
+let workerLayerGroup = null;
+
+let workerMarker = null;
+let workerSimInterval = null;
+
+
+// ════════════════════════════════════════════
+// 지도 초기화
+// ════════════════════════════════════════════
+function initMap(imgWidth, imgHeight) {
+  if (map) { map.remove(); map = null; }
+
+  // CRS.Simple: 픽셀 좌표 그대로 사용
+  map = L.map('map', {
+    crs: L.CRS.Simple,
+    minZoom: -3,
+    maxZoom: 3,
+    zoomSnap: 0.25,
+  });
+
+  imageBounds = [[0, 0], [imgHeight, imgWidth]];
+
+  map.fitBounds(imageBounds);
+
+  // 레이어 그룹
+  geofenceLayerGroup = L.layerGroup().addTo(map);
+  sensorLayerGroup   = L.layerGroup().addTo(map);
+  workerLayerGroup   = L.layerGroup().addTo(map);
+
+  // 좌표 표시
+  map.on('mousemove', function(e) {
+    const x = Math.round(e.latlng.lng);
+    const y = Math.round(e.latlng.lat);
+    document.getElementById('coord-display').textContent = `x: ${x}, y: ${y}`;
+  });
+
+  // 클릭 이벤트 (그리기 모드)
+  map.on('click', function(e) {
+    if (!isDrawing) return;
+    addDrawPoint(e.latlng);
+  });
+
+  // DB에서 지오펜스, 센서 불러오기
+  loadGeoFences();
+  loadDevices();
+
+  // 작업자 시뮬레이션 시작
+  startWorkerSimulation(imgWidth, imgHeight);
+}
+
+
+// ════════════════════════════════════════════
+// 이미지 업로드
+// ════════════════════════════════════════════
+document.getElementById('file-input').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    const img = new Image();
+    img.onload = function() {
+      const W = img.naturalWidth;
+      const H = img.naturalHeight;
+
+      // 지도 초기화
+      initMap(W, H);
+
+      // 이미지 오버레이 추가
+      if (imageOverlay) imageOverlay.remove();
+      imageOverlay = L.imageOverlay(evt.target.result, [[0,0],[H,W]]).addTo(map);
+      map.fitBounds([[0,0],[H,W]]);
+
+      // 업로드 영역 업데이트
+      const uploadArea = document.getElementById('upload-area');
+      uploadArea.classList.add('has-image');
+      document.getElementById('upload-label').textContent = file.name;
+      document.querySelector('#upload-area p').textContent = `${W} × ${H} px`;
+
+      // 플레이스홀더 숨김
+      const ph = document.getElementById('map-placeholder');
+      if (ph) ph.style.display = 'none';
+    };
+    img.src = evt.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+
+// ════════════════════════════════════════════
+// 지오펜스 그리기
+// ════════════════════════════════════════════
+function toggleDrawMode() {
+  if (!map) { alert('먼저 공장 평면도 이미지를 업로드하세요.'); return; }
+
+  isDrawing = !isDrawing;
+  const btn = document.getElementById('draw-fence-btn');
+  const hint = document.getElementById('draw-hint');
+
+  if (isDrawing) {
+    btn.textContent = '✔ 그리기 완료';
+    btn.classList.add('drawing');
+    hint.style.display = 'block';
+    map.getContainer().style.cursor = 'crosshair';
+  } else {
+    // 3개 이상이면 완성
+    if (drawPoints.length >= 3) {
+      finishPolygon();
+    } else {
+      alert('최소 3개 이상의 점을 찍어야 합니다.');
+      resetDraw();
+    }
+  }
+}
+
+function addDrawPoint(latlng) {
+  drawPoints.push(latlng);
+
+  // 마커 표시
+  const marker = L.circleMarker(latlng, {
+    radius: 5, color: '#e67e22', fillColor: '#e67e22',
+    fillOpacity: 1, weight: 2,
+  }).addTo(map);
+  drawMarkers.push(marker);
+
+  // 첫 점 클릭으로 완성 (3개 이상일 때)
+  if (drawPoints.length >= 3) {
+    const first = drawPoints[0];
+    const dist = map.distance(latlng, first);
+    if (dist < 15) {
+      finishPolygon();
+      return;
+    }
+  }
+
+  // 실시간 선 업데이트
+  if (drawPolyline) drawPolyline.remove();
+  drawPolyline = L.polyline(drawPoints, { color: '#e67e22', weight: 2, dashArray: '5,5' }).addTo(map);
+}
+
+function finishPolygon() {
+  if (drawPoints.length < 3) return;
+
+  // polygon 표시 (임시, 주황)
+  if (pendingPolygon) pendingPolygon.remove();
+  pendingPolygon = L.polygon(drawPoints, {
+    color: '#e67e22', fillColor: '#e67e22',
+    fillOpacity: 0.25, weight: 2,
+  }).addTo(map);
+
+  // 좌표 변환: Leaflet [lat,lng] → 공장 [x, y]
+  // CRS.Simple에서 lat=y, lng=x
+  pendingCoords = drawPoints.map(p => [Math.round(p.lng), Math.round(p.lat)]);
+
+  // 그리기 임시 요소 제거
+  drawMarkers.forEach(m => m.remove());
+  drawMarkers = [];
+  if (drawPolyline) { drawPolyline.remove(); drawPolyline = null; }
+  drawPoints = [];
+
+  // 모달 열기
+  isDrawing = false;
+  const btn = document.getElementById('draw-fence-btn');
+  btn.textContent = '✏️ 지오펜스 그리기';
+  btn.classList.remove('drawing');
+  document.getElementById('draw-hint').style.display = 'none';
+  map.getContainer().style.cursor = '';
+
+  openModal();
+}
+
+function clearCurrentDraw() {
+  resetDraw();
+  if (pendingPolygon) { pendingPolygon.remove(); pendingPolygon = null; }
+  pendingCoords = [];
+}
+
+function resetDraw() {
+  isDrawing = false;
+  drawPoints = [];
+  drawMarkers.forEach(m => m.remove());
+  drawMarkers = [];
+  if (drawPolyline) { drawPolyline.remove(); drawPolyline = null; }
+
+  const btn = document.getElementById('draw-fence-btn');
+  btn.textContent = '✏️ 지오펜스 그리기';
+  btn.classList.remove('drawing');
+  document.getElementById('draw-hint').style.display = 'none';
+  if (map) map.getContainer().style.cursor = '';
+}
+
+
+// ════════════════════════════════════════════
+// 모달 (저장 폼)
+// ════════════════════════════════════════════
+function openModal() {
+  document.getElementById('fence-modal').classList.add('open');
+  document.getElementById('fence-name').focus();
+}
+
+function closeModal() {
+  document.getElementById('fence-modal').classList.remove('open');
+  if (pendingPolygon) { pendingPolygon.remove(); pendingPolygon = null; }
+  pendingCoords = [];
+  // 폼 초기화
+  document.getElementById('fence-name').value = '';
+  document.getElementById('fence-desc').value = '';
+}
+
+
+// ════════════════════════════════════════════
+// API: 지오펜스 저장
+// ════════════════════════════════════════════
+async function saveGeoFence() {
+  const name = document.getElementById('fence-name').value.trim();
+  if (!name) { alert('구역명을 입력하세요.'); return; }
+  if (pendingCoords.length < 3) { alert('좌표가 없습니다. 다시 그려주세요.'); return; }
+
+  const payload = {
+    name,
+    zone_type: document.getElementById('fence-type').value,
+    risk_level: document.getElementById('fence-risk').value,
+    description: document.getElementById('fence-desc').value.trim(),
+    polygon: pendingCoords,
+  };
+
+  try {
+    const res = await fetch('/api/geofence/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) throw new Error(await res.text());
+
+    const data = await res.json();
+    document.getElementById('fence-modal').classList.remove('open');
+    document.getElementById('fence-name').value = '';
+    document.getElementById('fence-desc').value = '';
+    pendingCoords = [];
+
+    // 화면에 즉시 추가
+    renderGeoFence(data);
+    addToSidebarList(data);
+
+    // 임시 polygon 제거
+    if (pendingPolygon) { pendingPolygon.remove(); pendingPolygon = null; }
+
+  } catch (err) {
+    alert('저장 실패: ' + err.message);
+  }
+}
+
+
+// ════════════════════════════════════════════
+// API: 지오펜스 불러오기
+// ════════════════════════════════════════════
+async function loadGeoFences() {
+  try {
+    const res = await fetch('/api/geofence/');
+    const data = await res.json();
+    const list = data.results || data;
+
+    if (list.length === 0) return;
+
+    // 목록 비우기
+    document.getElementById('geofence-list').innerHTML = '';
+
+    list.forEach(fence => {
+      renderGeoFence(fence);
+      addToSidebarList(fence);
+    });
+  } catch (err) {
+    console.error('지오펜스 불러오기 실패:', err);
+  }
+}
+
+function renderGeoFence(fence) {
+  // [[x,y],...] → Leaflet [[lat,lng],...] = [[y,x],...]
+  const latlngs = fence.polygon.map(([x, y]) => [y, x]);
+  const color = ZONE_COLORS[fence.zone_type] || '#aaa';
+
+  const poly = L.polygon(latlngs, {
+    color, fillColor: color,
+    fillOpacity: 0.2, weight: 2,
+  });
+
+  poly.bindPopup(`
+    <div class="popup-title">${fence.name}</div>
+    <div class="popup-row"><span class="label">유형</span><span class="value">${fence.zone_type}</span></div>
+    <div class="popup-row"><span class="label">위험도</span><span class="value">${fence.risk_level}</span></div>
+    <div class="popup-row"><span class="label">설명</span><span class="value">${fence.description || '–'}</span></div>
+    <div class="popup-row"><span class="label">꼭짓점</span><span class="value">${fence.polygon.length}개</span></div>
+  `);
+
+  poly.fenceId = fence.id;
+  geofenceLayerGroup.addLayer(poly);
+}
+
+function addToSidebarList(fence) {
+  const list = document.getElementById('geofence-list');
+
+  // 빈 메시지 제거
+  const empty = list.querySelector('p');
+  if (empty) empty.remove();
+
+  const color = ZONE_COLORS[fence.zone_type] || '#aaa';
+  const item = document.createElement('div');
+  item.className = 'geofence-item';
+  item.dataset.id = fence.id;
+  item.innerHTML = `
+    <div class="geofence-dot" style="background:${color}"></div>
+    <div class="geofence-info">
+      <div class="name">${fence.name}</div>
+      <div class="meta">${fence.zone_type} · ${fence.risk_level} · ${fence.polygon.length}개 꼭짓점</div>
+    </div>
+    <button class="delete-btn" onclick="deleteGeoFence(${fence.id}, this)" title="삭제">✕</button>
+  `;
+
+  // 클릭 시 해당 구역으로 이동
+  item.addEventListener('click', function(e) {
+    if (e.target.classList.contains('delete-btn')) return;
+    geofenceLayerGroup.eachLayer(layer => {
+      if (layer.fenceId === fence.id) {
+        map.fitBounds(layer.getBounds());
+        layer.openPopup();
+      }
+    });
+  });
+
+  list.appendChild(item);
+}
+
+
+// ════════════════════════════════════════════
+// API: 지오펜스 삭제
+// ════════════════════════════════════════════
+async function deleteGeoFence(id, btn) {
+  if (!confirm('이 위험 구역을 삭제하시겠습니까?')) return;
+
+  try {
+    const res = await fetch(`/api/geofence/${id}/`, {
+      method: 'DELETE',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    });
+
+    if (res.status === 204) {
+      // 지도에서 제거
+      geofenceLayerGroup.eachLayer(layer => {
+        if (layer.fenceId === id) geofenceLayerGroup.removeLayer(layer);
+      });
+      // 사이드바에서 제거
+      const item = document.querySelector(`.geofence-item[data-id="${id}"]`);
+      if (item) item.remove();
+
+      if (document.getElementById('geofence-list').children.length === 0) {
+        document.getElementById('geofence-list').innerHTML =
+          '<p style="font-size:12px; color:#3a3f55; text-align:center; padding:20px;">지오펜스가 없습니다.<br>지도에서 구역을 그려보세요.</p>';
+      }
+    }
+  } catch (err) {
+    alert('삭제 실패: ' + err.message);
+  }
+}
+
+
+// ════════════════════════════════════════════
+// API: 센서 불러오기
+// ════════════════════════════════════════════
+async function loadDevices() {
+  try {
+    const res = await fetch('/api/device/');
+    const data = await res.json();
+    const list = data.results || data;
+    list.forEach(renderDevice);
+  } catch (err) {
+    console.error('센서 불러오기 실패:', err);
+  }
+}
+
+function renderDevice(device) {
+  // 공장 좌표 [x, y] → Leaflet [lat, lng] = [y, x]
+  const latlng = [device.y, device.x];
+  const color = SENSOR_COLORS[device.sensor_type] || '#aaa';
+  const icon = SENSOR_ICONS[device.sensor_type] || '📡';
+
+  const statusClass = {
+    normal: 'status-normal', caution: 'status-caution', danger: 'status-danger'
+  }[device.status] || 'status-normal';
+
+  const divIcon = L.divIcon({
+    className: '',
+    html: `<div style="
+      background:${color}22; border:2px solid ${color};
+      border-radius:50%; width:32px; height:32px;
+      display:flex; align-items:center; justify-content:center;
+      font-size:14px; cursor:pointer;
+    ">${icon}</div>`,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+  });
+
+  const marker = L.marker(latlng, { icon: divIcon });
+
+  marker.bindPopup(`
+    <div class="popup-title">${icon} ${device.device_name}</div>
+    <div class="popup-row"><span class="label">ID</span><span class="value">${device.device_id}</span></div>
+    <div class="popup-row"><span class="label">종류</span><span class="value">${device.sensor_type}</span></div>
+    <div class="popup-row"><span class="label">위치</span><span class="value">x:${device.x}, y:${device.y}</span></div>
+    <div class="popup-row"><span class="label">상태</span><span class="value"><span class="status-badge ${statusClass}">${device.status}</span></span></div>
+    <div class="popup-row"><span class="label">최근값</span><span class="value">${device.last_value ?? '–'} ${device.last_value_unit}</span></div>
+  `);
+
+  sensorLayerGroup.addLayer(marker);
+}
+
+
+// ════════════════════════════════════════════
+// 작업자 위치 시뮬레이션
+// ════════════════════════════════════════════
+function startWorkerSimulation(imgW, imgH) {
+  if (workerSimInterval) clearInterval(workerSimInterval);
+
+  // 시작 위치 (이미지 중앙 부근)
+  let wx = imgW * 0.3;
+  let wy = imgH * 0.4;
+  let dx = 3, dy = 2;
+
+  const workerIcon = L.divIcon({
+    className: '',
+    html: `<div style="
+      background:#2ecc7122; border:2px solid #2ecc71;
+      border-radius:50%; width:28px; height:28px;
+      display:flex; align-items:center; justify-content:center;
+      font-size:14px;
+    ">👷</div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+
+  workerMarker = L.marker([wy, wx], { icon: workerIcon })
+    .bindTooltip('worker_01', { permanent: false, direction: 'top' });
+  workerLayerGroup.addLayer(workerMarker);
+
+  workerSimInterval = setInterval(() => {
+    wx += dx + (Math.random() - 0.5) * 2;
+    wy += dy + (Math.random() - 0.5) * 2;
+
+    // 경계 반사
+    if (wx < 50 || wx > imgW - 50) dx = -dx;
+    if (wy < 50 || wy > imgH - 50) dy = -dy;
+    wx = Math.max(20, Math.min(imgW - 20, wx));
+    wy = Math.max(20, Math.min(imgH - 20, wy));
+
+    workerMarker.setLatLng([wy, wx]);
+  }, 800);
+}
+
+
+// ════════════════════════════════════════════
+// 레이어 토글
+// ════════════════════════════════════════════
+document.getElementById('layer-geofence').addEventListener('change', function() {
+  if (!map) return;
+  if (this.checked) map.addLayer(geofenceLayerGroup);
+  else map.removeLayer(geofenceLayerGroup);
+});
+
+document.getElementById('layer-sensor').addEventListener('change', function() {
+  if (!map) return;
+  if (this.checked) map.addLayer(sensorLayerGroup);
+  else map.removeLayer(sensorLayerGroup);
+});
+
+document.getElementById('layer-worker').addEventListener('change', function() {
+  if (!map) return;
+  if (this.checked) map.addLayer(workerLayerGroup);
+  else map.removeLayer(workerLayerGroup);
+});
+
+
+// ════════════════════════════════════════════
+// 유틸
+// ════════════════════════════════════════════
+function getCsrfToken() {
+  const el = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+  return el ? el.split('=')[1] : '';
+}
+
+
+// ── 플레이스홀더 표시 (지도 없을 때) ──
+(function() {
+  const placeholder = document.createElement('div');
+  placeholder.id = 'map-placeholder';
+  placeholder.innerHTML = `
+    <div class="icon">📐</div>
+    <p>왼쪽에서 공장 평면도 이미지를 업로드하면<br>이 화면에 지도가 표시됩니다.</p>
+  `;
+  document.getElementById('map-container').appendChild(placeholder);
+})();
+</script>
+
+</body>
+</html>

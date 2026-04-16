@@ -1,0 +1,331 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #0f1117;
+    color: #e0e0e0;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* ── 사이드바 ── */
+#sidebar {
+    width: 320px;
+    min-width: 320px;
+    background: #1a1d27;
+    border-right: 1px solid #2a2d3a;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#sidebar-header {
+    padding: 18px 20px;
+    background: #12151f;
+    border-bottom: 1px solid #2a2d3a;
+}
+
+#sidebar-header h1 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.5px;
+}
+
+#sidebar-header p {
+    font-size: 11px;
+    color: #5a5f7a;
+    margin-top: 3px;
+}
+
+.sidebar-section {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid #2a2d3a;
+}
+
+.sidebar-section h3 {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #5a6080;
+    margin-bottom: 10px;
+}
+
+/* 이미지 업로드 */
+#upload-area {
+    border: 2px dashed #2a2d3a;
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#upload-area:hover { border-color: #4a7fff; background: rgba(74,127,255,0.05); }
+#upload-area.has-image { border-style: solid; border-color: #2ecc71; }
+
+#upload-area .upload-icon { font-size: 28px; margin-bottom: 8px; }
+#upload-area p { font-size: 12px; color: #5a5f7a; }
+#upload-area strong { color: #a0a8c0; font-size: 13px; }
+
+#file-input { display: none; }
+
+/* 도구 버튼 */
+.tool-group { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.tool-btn {
+    flex: 1;
+    min-width: 80px;
+    padding: 8px 10px;
+    border: 1px solid #2a2d3a;
+    border-radius: 6px;
+    background: #12151f;
+    color: #a0a8c0;
+    font-size: 12px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+}
+
+.tool-btn:hover { border-color: #4a7fff; color: #4a7fff; background: rgba(74,127,255,0.08); }
+.tool-btn.active { border-color: #4a7fff; color: #fff; background: #4a7fff; }
+.tool-btn.danger-btn:hover { border-color: #e74c3c; color: #e74c3c; background: rgba(231,76,60,0.08); }
+
+/* 지오펜스 목록 */
+#geofence-list { flex: 1; overflow-y: auto; padding: 8px 16px; }
+
+.geofence-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #12151f;
+    border: 1px solid #2a2d3a;
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.geofence-item:hover { border-color: #3a4060; background: #161925; }
+
+.geofence-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.geofence-info { flex: 1; min-width: 0; }
+.geofence-info .name { font-size: 13px; font-weight: 600; color: #e0e0e0; }
+.geofence-info .meta { font-size: 11px; color: #5a5f7a; margin-top: 2px; }
+
+.delete-btn {
+    background: none;
+    border: none;
+    color: #3a3f55;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.15s;
+}
+.delete-btn:hover { color: #e74c3c; background: rgba(231,76,60,0.1); }
+
+/* ── 지오펜스 생성 폼 모달 ── */
+#fence-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+}
+
+#fence-modal.open { display: flex; }
+
+.modal-box {
+    background: #1a1d27;
+    border: 1px solid #2a2d3a;
+    border-radius: 12px;
+    padding: 24px;
+    width: 360px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+
+.modal-box h2 { font-size: 16px; font-weight: 700; margin-bottom: 18px; color: #fff; }
+
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 11px; color: #5a6080; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 5px; }
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 9px 12px;
+    background: #12151f;
+    border: 1px solid #2a2d3a;
+    border-radius: 6px;
+    color: #e0e0e0;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus { border-color: #4a7fff; }
+
+.form-group textarea { resize: vertical; min-height: 60px; }
+
+.form-group select option { background: #1a1d27; }
+
+.modal-actions { display: flex; gap: 8px; margin-top: 18px; }
+
+.btn-primary {
+    flex: 1; padding: 10px;
+    background: #4a7fff;
+    border: none; border-radius: 6px;
+    color: #fff; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: background 0.2s;
+}
+.btn-primary:hover { background: #3a6fee; }
+
+.btn-secondary {
+    flex: 1; padding: 10px;
+    background: transparent;
+    border: 1px solid #2a2d3a;
+    border-radius: 6px;
+    color: #a0a8c0; font-size: 13px;
+    cursor: pointer; transition: all 0.2s;
+}
+.btn-secondary:hover { border-color: #4a4f6a; color: #e0e0e0; }
+
+/* ── 지도 영역 ── */
+#map-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#map-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: #12151f;
+    border-bottom: 1px solid #2a2d3a;
+}
+
+#map-toolbar span { font-size: 12px; color: #5a5f7a; }
+#coord-display { font-size: 12px; color: #4a7fff; font-family: monospace; margin-left: auto; }
+
+#draw-fence-btn {
+    padding: 7px 14px;
+    background: #4a7fff;
+    border: none; border-radius: 6px;
+    color: #fff; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: background 0.2s;
+}
+#draw-fence-btn:hover { background: #3a6fee; }
+#draw-fence-btn.drawing { background: #e67e22; }
+
+#clear-draw-btn {
+    padding: 7px 12px;
+    background: transparent;
+    border: 1px solid #2a2d3a;
+    border-radius: 6px;
+    color: #a0a8c0; font-size: 12px;
+    cursor: pointer;
+}
+
+#map { flex: 1; background: #0a0c12; }
+
+/* 레이아웃 힌트 (이미지 없을 때) */
+#map-placeholder {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+    z-index: 500;
+}
+#map-placeholder .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.3; }
+#map-placeholder p { font-size: 14px; color: #3a3f55; }
+
+/* 상태 뱃지 */
+.status-badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+}
+.status-normal { background: rgba(46,204,113,0.15); color: #2ecc71; }
+.status-caution { background: rgba(241,196,15,0.15); color: #f1c40f; }
+.status-danger  { background: rgba(231,76,60,0.15); color: #e74c3c; }
+
+/* 레이어 토글 */
+.layer-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 0;
+}
+.layer-toggle label { font-size: 12px; color: #a0a8c0; }
+
+.toggle-switch {
+    position: relative; width: 36px; height: 20px;
+}
+.toggle-switch input { display: none; }
+.toggle-switch .slider {
+    position: absolute; inset: 0;
+    background: #2a2d3a; border-radius: 20px;
+    cursor: pointer; transition: 0.2s;
+}
+.toggle-switch input:checked + .slider { background: #4a7fff; }
+.toggle-switch .slider::after {
+    content: '';
+    position: absolute;
+    width: 14px; height: 14px;
+    background: #fff; border-radius: 50%;
+    top: 3px; left: 3px;
+    transition: 0.2s;
+}
+.toggle-switch input:checked + .slider::after { transform: translateX(16px); }
+
+/* Leaflet 커스텀 팝업 */
+.leaflet-popup-content-wrapper {
+    background: #1a1d27 !important;
+    border: 1px solid #2a2d3a !important;
+    border-radius: 8px !important;
+    color: #e0e0e0 !important;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4) !important;
+}
+.leaflet-popup-tip { background: #1a1d27 !important; }
+.popup-title { font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+.popup-row { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; border-bottom: 1px solid #2a2d3a; }
+.popup-row:last-child { border: none; }
+.popup-row .label { color: #5a6080; }
+.popup-row .value { color: #e0e0e0; font-weight: 500; }
+
+/* 그리기 모드 안내 */
+#draw-hint {
+    display: none;
+    position: absolute;
+    bottom: 30px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(230,126,34,0.9);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+#map-container { position: relative; }
