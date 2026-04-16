@@ -37,6 +37,11 @@ INSTALLED_APPS = [
 
     # 로컬
     'accounts',
+    'dashboard',
+    'devices',
+    'geofence',
+    'monitor',
+    'alerts',
 ]
 
 # ==========================================================

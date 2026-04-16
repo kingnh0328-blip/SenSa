@@ -1,0 +1,2101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SenSa 공장 관제 시스템</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    /* ════════════════════════════════════════
+       기본 레이아웃
+       왼쪽: 사이드바 (280px 고정)
+       오른쪽: 지도 영역 (나머지 공간 전부)
+    ════════════════════════════════════════ */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0f1117;
+      color: #e0e0e0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+
+    /* ── 사이드바 전체 ── */
+    #sidebar {
+      width: 280px;
+      min-width: 280px;
+      background: #1a1d27;
+      border-right: 1px solid #2a2d3a;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* 사이드바 상단 헤더 */
+    #sidebar-header {
+      padding: 14px 16px;
+      background: #12151f;
+      border-bottom: 1px solid #2a2d3a;
+      flex-shrink: 0;
+    }
+
+    #sidebar-header h1 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    #sidebar-header p {
+      font-size: 10px;
+      color: #5a5f7a;
+      margin-top: 2px;
+    }
+
+    /* 사이드바 각 섹션 공통 */
+    .sidebar-section {
+      padding: 10px 12px 8px;
+      border-bottom: 1px solid #2a2d3a;
+      flex-shrink: 0;
+    }
+
+    .sidebar-section h3 {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #5a6080;
+      margin-bottom: 7px;
+    }
+
+
+    /* ── 이미지 업로드 영역 ── */
+    #upload-area {
+      border: 2px dashed #2a2d3a;
+      border-radius: 7px;
+      padding: 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    #upload-area:hover {
+      border-color: #4a7fff;
+      background: rgba(74, 127, 255, 0.05);
+    }
+
+    /* 이미지가 업로드되면 테두리를 초록색으로 변경 */
+    #upload-area.has-image {
+      border-style: solid;
+      border-color: #2ecc71;
+    }
+
+    #upload-area .upload-icon { font-size: 20px; margin-bottom: 4px; }
+    #upload-area p            { font-size: 10px; color: #5a5f7a; }
+    #upload-area strong       { color: #a0a8c0; font-size: 11px; }
+    #file-input               { display: none; }
+
+
+    /* ── 시나리오 버튼 ── */
+    .scenario-btns {
+      display: flex;
+      gap: 4px;
+    }
+
+    .scenario-btn {
+      flex: 1;
+      padding: 5px 3px;
+      font-size: 10px;
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+      border: 1px solid;
+      text-align: center;
+      transition: all 0.2s;
+    }
+
+    /* 각 모드별 기본 색상 */
+    .scenario-btn.normal { color: #2ecc71; border-color: #2ecc71; background: #2ecc7111; }
+    .scenario-btn.mixed  { color: #f1c40f; border-color: #f1c40f; background: #f1c40f11; }
+    .scenario-btn.danger { color: #e74c3c; border-color: #e74c3c; background: #e74c3c11; }
+
+    /* 활성화된 버튼은 배경 채움 */
+    .scenario-btn.active.normal { background: #2ecc71; color: #fff; }
+    .scenario-btn.active.mixed  { background: #f1c40f; color: #fff; }
+    .scenario-btn.active.danger { background: #e74c3c; color: #fff; }
+
+    /* 시뮬레이션 정보 (경과 시간, 현재 모드) */
+    #sim-info {
+      font-size: 10px;
+      color: #5a6080;
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+    }
+
+    #sim-tick { color: #4a7fff; font-family: monospace; }
+
+
+    /* ── 레이어 ON/OFF 토글 ── */
+    .layer-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 0;
+    }
+
+    .layer-toggle label { font-size: 11px; color: #a0a8c0; }
+
+    /* CSS 토글 스위치 */
+    .toggle-switch { position: relative; width: 32px; height: 17px; }
+    .toggle-switch input { display: none; }
+    .toggle-switch .slider {
+      position: absolute;
+      inset: 0;
+      background: #2a2d3a;
+      border-radius: 17px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .toggle-switch input:checked + .slider { background: #4a7fff; }
+    .toggle-switch .slider::after {
+      content: '';
+      position: absolute;
+      width: 11px;
+      height: 11px;
+      background: #fff;
+      border-radius: 50%;
+      top: 3px;
+      left: 3px;
+      transition: 0.2s;
+    }
+    .toggle-switch input:checked + .slider::after { transform: translateX(15px); }
+
+
+    /* ── 센서 상태 카드 목록 ── */
+    #sensor-list {
+      overflow-y: auto;
+      padding: 6px 10px;
+      max-height: 160px;
+      flex-shrink: 0;
+    }
+
+    .sensor-card {
+      background: #12151f;
+      border: 1px solid #2a2d3a;
+      border-radius: 6px;
+      padding: 7px 9px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    /* 상태에 따라 카드 왼쪽 색상 바 변경 */
+    .sensor-card.status-normal  { border-left: 3px solid #2ecc71; }
+    .sensor-card.status-caution { border-left: 3px solid #f1c40f; }
+    .sensor-card.status-danger  { border-left: 3px solid #e74c3c; }
+
+    .sensor-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .sensor-card-name { font-size: 11px; font-weight: 600; color: #e0e0e0; }
+    .sensor-card-vals { font-size: 10px; color: #5a6080; margin-top: 3px; font-family: monospace; }
+
+
+    /* ── 지오펜스 목록 ── */
+    #geofence-list {
+      overflow-y: auto;
+      padding: 5px 10px;
+      max-height: 110px;
+      flex-shrink: 0;
+    }
+
+    .geofence-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: #12151f;
+      border: 1px solid #2a2d3a;
+      margin-bottom: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .geofence-item:hover { border-color: #3a4060; }
+
+    .geofence-dot   { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .geofence-info .name { font-size: 11px; font-weight: 600; color: #e0e0e0; }
+    .geofence-info .meta { font-size: 10px; color: #5a5f7a; }
+
+    .delete-btn {
+      background: none;
+      border: none;
+      color: #3a3f55;
+      font-size: 13px;
+      cursor: pointer;
+      padding: 2px 4px;
+      border-radius: 3px;
+      margin-left: auto;
+    }
+
+    .delete-btn:hover { color: #e74c3c; }
+
+
+    /* ── 상태 뱃지 (normal / caution / danger) ── */
+    .status-badge {
+      display: inline-block;
+      padding: 1px 5px;
+      border-radius: 8px;
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .status-normal  { background: rgba(46, 204, 113, 0.15); color: #2ecc71; }
+    .status-caution { background: rgba(241, 196, 15, 0.15);  color: #f1c40f; }
+    .status-danger  { background: rgba(231, 76, 60, 0.15);   color: #e74c3c; }
+
+
+    /* ════════════════════════════════════════
+       알람 패널
+       사이드바 하단에 배치.
+       flex: 1 로 남은 공간을 전부 차지함.
+    ════════════════════════════════════════ */
+    #alarm-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      border-top: 1px solid #2a2d3a;
+      min-height: 0; /* flex 자식이 넘치지 않도록 */
+    }
+
+    #alarm-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      flex-shrink: 0;
+    }
+
+    #alarm-header h3 {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #5a6080;
+    }
+
+    /* 읽지 않은 알람 수 뱃지 */
+    #alarm-badge {
+      background: #e74c3c;
+      color: #fff;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 8px;
+      display: none; /* 알람 없으면 숨김 */
+    }
+
+    #alarm-read-all {
+      font-size: 9px;
+      color: #5a6080;
+      background: none;
+      border: none;
+      cursor: pointer;
+      margin-left: auto;
+    }
+
+    #alarm-read-all:hover { color: #a0a8c0; }
+
+    /* 알람 목록 (스크롤) */
+    #alarm-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 10px 10px;
+    }
+
+    /* 개별 알람 아이템 */
+    .alarm-item {
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #2a2d3a;
+      background: #12151f;
+      margin-bottom: 5px;
+      cursor: pointer;
+      border-left-width: 3px;
+      transition: opacity 0.2s;
+    }
+
+    /* 읽지 않은 알람은 배경 약간 밝게 */
+    .alarm-item.unread { background: #161925; }
+
+    /* 알람 레벨별 왼쪽 색상 바 */
+    .alarm-item.level-info     { border-left-color: #3498db; }
+    .alarm-item.level-caution  { border-left-color: #f1c40f; }
+    .alarm-item.level-danger   { border-left-color: #e74c3c; }
+    .alarm-item.level-critical { border-left-color: #9b59b6; background: #1a1525; }
+
+    .alarm-msg  { font-size: 11px; color: #e0e0e0; line-height: 1.4; margin-bottom: 3px; }
+    .alarm-meta { font-size: 10px; color: #5a6080; }
+    .alarm-empty { font-size: 11px; color: #3a3f55; text-align: center; padding: 16px; }
+
+
+    /* ════════════════════════════════════════
+       지도 영역
+    ════════════════════════════════════════ */
+    #map-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative; /* 토스트/힌트 absolute 기준점 */
+    }
+
+    /* 지도 상단 툴바 */
+    #map-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 12px;
+      background: #12151f;
+      border-bottom: 1px solid #2a2d3a;
+      flex-shrink: 0;
+    }
+
+    #map-toolbar span   { font-size: 10px; color: #5a5f7a; }
+    #coord-display      { font-size: 10px; color: #4a7fff; font-family: monospace; margin-left: auto; }
+
+    #draw-fence-btn {
+      padding: 5px 10px;
+      background: #4a7fff;
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    /* 그리기 모드 활성화 시 주황색으로 변경 */
+    #draw-fence-btn.drawing { background: #e67e22; }
+
+    #clear-draw-btn {
+      padding: 5px 9px;
+      background: transparent;
+      border: 1px solid #2a2d3a;
+      border-radius: 4px;
+      color: #a0a8c0;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    /* Leaflet 지도가 렌더링되는 div */
+    #map { flex: 1; background: #0a0c12; }
+
+    /* 이미지 업로드 전 안내 문구 */
+    #map-placeholder {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      pointer-events: none;
+      z-index: 500;
+    }
+
+    #map-placeholder .icon { font-size: 36px; margin-bottom: 8px; opacity: 0.3; }
+    #map-placeholder p     { font-size: 12px; color: #3a3f55; }
+
+    /* 지오펜스 그리기 중 하단 안내 힌트 */
+    #draw-hint {
+      display: none; /* 그리기 모드 시작 시 표시 */
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(230, 126, 34, 0.9);
+      color: #fff;
+      padding: 7px 16px;
+      border-radius: 14px;
+      font-size: 11px;
+      font-weight: 600;
+      z-index: 1000;
+      pointer-events: none;
+    }
+
+
+    /* ── 알람 토스트 팝업 (지도 우상단) ── */
+    #alarm-toast-container {
+      position: absolute;
+      top: 56px;
+      right: 14px;
+      z-index: 2000;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      pointer-events: none; /* 지도 클릭 방해 안 하도록 */
+    }
+
+    .alarm-toast {
+      padding: 9px 13px;
+      border-radius: 7px;
+      font-size: 11px;
+      font-weight: 500;
+      max-width: 280px;
+      border-left: 3px solid;
+      line-height: 1.4;
+      pointer-events: all; /* 클릭으로 닫을 수 있도록 */
+      cursor: pointer;
+      animation: toastSlideIn 0.3s ease;
+    }
+
+    /* 토스트 레벨별 색상 */
+    .toast-caution  { background: #1c1a0d; border-left-color: #f1c40f; color: #f1c40f; }
+    .toast-danger   { background: #1c0d0d; border-left-color: #e74c3c; color: #e74c3c; }
+    .toast-critical { background: #150d1c; border-left-color: #9b59b6; color: #9b59b6; }
+
+    @keyframes toastSlideIn {
+      from { opacity: 0; transform: translateX(16px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+
+    /* ════════════════════════════════════════
+       지오펜스 저장 모달
+    ════════════════════════════════════════ */
+    #fence-modal {
+      display: none; /* 기본 숨김 */
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #fence-modal.open { display: flex; }
+
+    .modal-box {
+      background: #1a1d27;
+      border: 1px solid #2a2d3a;
+      border-radius: 10px;
+      padding: 20px;
+      width: 320px;
+    }
+
+    .modal-box h2 { font-size: 14px; font-weight: 700; margin-bottom: 14px; color: #fff; }
+
+    .form-group { margin-bottom: 10px; }
+
+    .form-group label {
+      display: block;
+      font-size: 10px;
+      color: #5a6080;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 4px;
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 7px 9px;
+      background: #12151f;
+      border: 1px solid #2a2d3a;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus { border-color: #4a7fff; }
+
+    .form-group textarea { resize: vertical; min-height: 50px; }
+    .form-group select option { background: #1a1d27; }
+
+    .modal-actions { display: flex; gap: 6px; margin-top: 14px; }
+
+    .btn-primary {
+      flex: 1;
+      padding: 8px;
+      background: #4a7fff;
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-secondary {
+      flex: 1;
+      padding: 8px;
+      background: transparent;
+      border: 1px solid #2a2d3a;
+      border-radius: 4px;
+      color: #a0a8c0;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+
+    /* ── Leaflet 팝업 커스텀 스타일 ── */
+    .leaflet-popup-content-wrapper {
+      background: #1a1d27 !important;
+      border: 1px solid #2a2d3a !important;
+      border-radius: 8px !important;
+      color: #e0e0e0 !important;
+    }
+
+    .leaflet-popup-tip { background: #1a1d27 !important; }
+
+    .popup-title { font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+
+    .popup-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      padding: 2px 0;
+      border-bottom: 1px solid #2a2d3a;
+    }
+
+    .popup-row:last-child { border: none; }
+    .popup-row .label { color: #5a6080; }
+    .popup-row .value { color: #e0e0e0; font-weight: 500; font-family: monospace; }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════
+     사이드바
+════════════════════════════════════════ -->
+<div id="sidebar">
+
+  <!-- 헤더 -->
+  <div id="sidebar-header">
+    <h1>🏭 SenSa 공장 관제 시스템</h1>
+    <p>Factory Safety Monitoring v0.1</p>
+  </div>
+
+  <!-- 공장 평면도 업로드 -->
+  <div class="sidebar-section">
+    <h3>공장 평면도</h3>
+    <div id="upload-area" onclick="document.getElementById('file-input').click()">
+      <div class="upload-icon">📐</div>
+      <strong id="upload-label">이미지 업로드</strong>
+      <p>JPG, PNG 파일을 선택하세요</p>
+    </div>
+    <input type="file" id="file-input" accept="image/*">
+  </div>
+
+  <!-- 시나리오 모드 선택 -->
+  <div class="sidebar-section">
+    <h3>시뮬레이션 시나리오</h3>
+    <div class="scenario-btns">
+      <div class="scenario-btn normal" onclick="setScenario('normal')">✅ 정상</div>
+      <div class="scenario-btn mixed active" onclick="setScenario('mixed')">⚠️ 혼합</div>
+      <div class="scenario-btn danger" onclick="setScenario('danger')">🚨 위험</div>
+    </div>
+    <div id="sim-info">
+      <span>경과: <span id="sim-tick">0</span>초</span>
+      <span id="sim-mode-label">모드: 혼합</span>
+    </div>
+  </div>
+
+  <!-- 레이어 ON/OFF -->
+  <div class="sidebar-section">
+    <h3>레이어</h3>
+    <div class="layer-toggle">
+      <label>⚠️ 지오펜스</label>
+      <label class="toggle-switch">
+        <input type="checkbox" id="layer-geofence" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="layer-toggle">
+      <label>📡 센서</label>
+      <label class="toggle-switch">
+        <input type="checkbox" id="layer-sensor" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="layer-toggle">
+      <label>👷 작업자</label>
+      <label class="toggle-switch">
+        <input type="checkbox" id="layer-worker" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <!-- 센서 상태 카드 (JS로 동적 생성) -->
+  <div class="sidebar-section" style="border-bottom: none; padding-bottom: 4px;">
+    <h3>센서 상태</h3>
+  </div>
+  <div id="sensor-list"></div>
+
+  <!-- 지오펜스 목록 (JS로 동적 생성) -->
+  <div class="sidebar-section" style="border-bottom: none; padding-bottom: 4px; border-top: 1px solid #2a2d3a;">
+    <h3>위험 구역</h3>
+  </div>
+  <div id="geofence-list">
+    <p style="font-size: 10px; color: #3a3f55; text-align: center; padding: 10px;">
+      지오펜스가 없습니다.
+    </p>
+  </div>
+
+  <!-- 알람 패널 -->
+  <div id="alarm-section">
+    <div id="alarm-header">
+      <h3>알람</h3>
+      <span id="alarm-badge">0</span>
+      <button id="alarm-read-all" onclick="readAllAlarms()">모두 읽음</button>
+    </div>
+    <div id="alarm-list">
+      <p class="alarm-empty">알람이 없습니다.</p>
+    </div>
+  </div>
+
+</div><!-- /sidebar -->
+
+
+<!-- ════════════════════════════════════════
+     지도 영역
+════════════════════════════════════════ -->
+<div id="map-container">
+
+  <!-- 툴바 -->
+  <div id="map-toolbar">
+    <span>📍</span>
+    <span id="coord-display">x: –, y: –</span>
+    <button id="draw-fence-btn" onclick="toggleDrawMode()">✏️ 지오펜스 그리기</button>
+    <button id="clear-draw-btn" onclick="clearCurrentDraw()">↩ 취소</button>
+  </div>
+
+  <!-- Leaflet 지도 -->
+  <div id="map"></div>
+
+  <!-- 알람 토스트 팝업 컨테이너 -->
+  <div id="alarm-toast-container"></div>
+
+  <!-- 그리기 모드 안내 힌트 -->
+  <div id="draw-hint">
+    클릭으로 꼭짓점 추가 → 첫 점 재클릭으로 완성 (최소 3개)
+  </div>
+
+</div><!-- /map-container -->
+
+
+<!-- ════════════════════════════════════════
+     지오펜스 저장 모달
+════════════════════════════════════════ -->
+<div id="fence-modal">
+  <div class="modal-box">
+    <h2>⚠️ 위험 구역 저장</h2>
+
+    <div class="form-group">
+      <label>구역명 *</label>
+      <input type="text" id="fence-name" placeholder="예: 위험구역 A">
+    </div>
+
+    <div class="form-group">
+      <label>구역 유형</label>
+      <select id="fence-type">
+        <option value="danger">위험</option>
+        <option value="caution">주의</option>
+        <option value="restricted">출입금지</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>위험도</label>
+      <select id="fence-risk">
+        <option value="critical">심각</option>
+        <option value="high">높음</option>
+        <option value="medium">보통</option>
+        <option value="low">낮음</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>설명</label>
+      <textarea id="fence-desc" placeholder="구역 설명 (선택)"></textarea>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">취소</button>
+      <button class="btn-primary" onclick="saveGeoFence()">저장</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     Leaflet 라이브러리
+════════════════════════════════════════ -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//
+//  SenSa 공장 관제 시스템 — map.html JavaScript
+//
+//  목차:
+//    1.  상수 정의 (색상, 아이콘)
+//    2.  센서 고정 위치 정의
+//    3.  가스/전력 임계치 정의
+//    4.  상태 판별 함수 (정상/주의/위험)
+//    5.  시뮬레이션 데이터 생성 함수
+//    6.  작업자 이동 시뮬레이션
+//    7.  Leaflet 지도 초기화
+//    8.  센서 마커 (초기 배치 + 상태 업데이트)
+//    9.  작업자 마커 (초기 배치 + 위치 업데이트)
+//    10. 사이드바 센서 카드 업데이트
+//    11. 알람 패널 (추가 / 토스트 / 읽음 처리)
+//    12. 지오펜스 내부 판별 API 호출
+//    13. 시뮬레이션 메인 루프 (1초 주기)
+//    14. 이미지 업로드 처리
+//    15. 지오펜스 그리기 (클릭으로 polygon 생성)
+//    16. 모달 열기/닫기
+//    17. 지오펜스 API (저장 / 불러오기 / 삭제)
+//    18. 레이어 ON/OFF 토글
+//    19. 유틸리티 함수
+//
+// ════════════════════════════════════════════════════════════
+
+
+// ────────────────────────────────────────────────────────────
+// 1. 상수 정의
+// ────────────────────────────────────────────────────────────
+
+// 지오펜스 구역 유형별 색상
+const ZONE_COLORS = {
+  danger:     '#e74c3c',  // 위험 → 빨강
+  caution:    '#f1c40f',  // 주의 → 노랑
+  restricted: '#9b59b6',  // 출입금지 → 보라
+};
+
+// 센서 종류별 마커 색상
+const SENSOR_COLORS = {
+  gas:         '#e74c3c',  // 가스 → 빨강
+  power:       '#f39c12',  // 전력 → 주황
+  temperature: '#3498db',  // 온도 → 파랑
+  motion:      '#2ecc71',  // 동작 → 초록
+};
+
+// 센서 종류별 이모지 아이콘
+const SENSOR_ICONS = {
+  gas:         '💨',
+  power:       '⚡',
+  temperature: '🌡️',
+  motion:      '🔊',
+};
+
+// 공장 이미지 크기 (업로드 후 실제 값으로 갱신)
+let IMG_W = 1360;
+let IMG_H = 960;
+
+// 작업자가 이미지 경계에서 유지하는 최소 여백 (px)
+const MARGIN = 40;
+
+
+// ────────────────────────────────────────────────────────────
+// 2. 센서 고정 위치 정의
+//
+//    주의: 센서 위치(location)는 절대 변하지 않는다.
+//    변하는 것은 측정값(gas, power)과 상태(status)뿐.
+// ────────────────────────────────────────────────────────────
+const SENSOR_DEVICES = [
+  {
+    device_id:   'sensor_01',
+    device_name: '가스센서 A',
+    sensor_type: 'gas',
+    location:    { x: 200, y: 150 },  // 생산라인 A 구역
+  },
+  {
+    device_id:   'sensor_02',
+    device_name: '가스센서 B',
+    sensor_type: 'gas',
+    location:    { x: 500, y: 180 },  // 생산라인 B 구역
+  },
+  {
+    device_id:   'sensor_03',
+    device_name: '가스센서 C',
+    sensor_type: 'gas',
+    location:    { x: 350, y: 390 },  // 위험물 보관소 인근
+  },
+  {
+    device_id:   'power_01',
+    device_name: '스마트파워 A',
+    sensor_type: 'power',
+    location:    { x: 620, y: 100 },  // 제어실
+  },
+  {
+    device_id:   'power_02',
+    device_name: '스마트파워 B',
+    sensor_type: 'power',
+    location:    { x: 130, y: 390 },  // 자재창고
+  },
+];
+
+
+// ────────────────────────────────────────────────────────────
+// 3. 가스/전력 임계치 정의
+//
+//    이 값을 기준으로 정상/주의/위험 상태를 판별한다.
+//    실제 장비 연동 시 여기만 수정하면 됨.
+// ────────────────────────────────────────────────────────────
+const GAS_THRESHOLDS = {
+  co:  { normal: 25,   danger: 200  },   // CO  (ppm)
+  h2s: { normal: 1,    danger: 5    },   // H2S (ppm)
+  co2: { normal: 1000, danger: 5000 },   // CO2 (ppm)
+  o2:  { low: 19.5,    high: 23.5   },   // O2 (%) — 범위형: 이 범위를 벗어나면 이상
+  no2: { normal: 0.1,  danger: 1.0  },   // NO2 (ppm)
+  so2: { normal: 0.5,  danger: 2.0  },   // SO2 (ppm)
+  o3:  { normal: 0.05, danger: 0.1  },   // O3  (ppm)
+  nh3: { normal: 25,   danger: 50   },   // NH3 (ppm)
+  voc: { normal: 0.5,  danger: 2.0  },   // VOC (ppm)
+};
+
+// 각 가스의 정상 중심값 (시뮬레이션 데이터 생성 기준점)
+const GAS_NORMAL_CENTER = {
+  co: 12, h2s: 0.3, co2: 600, o2: 20.9,
+  no2: 0.04, so2: 0.2, o3: 0.02, nh3: 8, voc: 0.15,
+};
+
+
+// ────────────────────────────────────────────────────────────
+// 4. 상태 판별 함수
+// ────────────────────────────────────────────────────────────
+
+/**
+ * 가스 측정값 객체를 받아 전체 상태를 반환한다.
+ * 하나라도 danger면 → 'danger'
+ * 하나라도 caution이면 → 'caution'
+ * 모두 정상이면 → 'normal'
+ */
+function classifyGasStatus(gas) {
+  let worstStatus = 'normal';
+
+  for (const [key, value] of Object.entries(gas)) {
+    const threshold = GAS_THRESHOLDS[key];
+    if (!threshold) continue;
+
+    let status;
+
+    if (key === 'o2') {
+      // O2는 범위형: 너무 낮거나 높으면 위험
+      if (value < 16 || value > 25) {
+        status = 'danger';
+      } else if (value < threshold.low || value > threshold.high) {
+        status = 'caution';
+      } else {
+        status = 'normal';
+      }
+    } else {
+      // 나머지는 단방향 임계치
+      if (value >= threshold.danger)      status = 'danger';
+      else if (value >= threshold.normal) status = 'caution';
+      else                                status = 'normal';
+    }
+
+    // 가장 나쁜 상태 유지
+    if (status === 'danger') {
+      worstStatus = 'danger';
+      break;  // danger 이상은 없으므로 즉시 종료
+    }
+    if (status === 'caution' && worstStatus === 'normal') {
+      worstStatus = 'caution';
+    }
+  }
+
+  return worstStatus;
+}
+
+/**
+ * 전력 측정값 객체를 받아 상태를 반환한다.
+ */
+function classifyPowerStatus(power) {
+  if (power.current >= 30 || power.watt >= 8000) return 'danger';
+  if (power.current >= 20 || power.voltage < 200 || power.voltage > 240) return 'caution';
+  return 'normal';
+}
+
+
+// ────────────────────────────────────────────────────────────
+// 5. 시뮬레이션 데이터 생성 함수
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Box-Muller 변환으로 가우시안(정규) 분포 난수 생성.
+ * 단순 Math.random()보다 현실적인 수치 변동을 만든다.
+ *
+ * @param {number} center - 중심값
+ * @param {number} std    - 표준편차 (변동 폭)
+ * @param {number} min    - 최솟값
+ * @param {number} max    - 최댓값
+ */
+function gauss(center, std, min, max) {
+  const u = 1 - Math.random();
+  const v = Math.random();
+  const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  return Math.min(max, Math.max(min, center + z * std));
+}
+
+/**
+ * 가스 측정값 생성.
+ *
+ * 시나리오 모드:
+ *   - 'normal': 항상 정상 범위
+ *   - 'mixed' : 일정 주기로 경고/위험 발생 (현실적 테스트용)
+ *   - 'danger': 강제 위험 수치 (발표/시연용)
+ */
+function generateGasValues(tick, mode) {
+  // 기본: 가우시안 분포로 정상 범위 중심 생성
+  const gas = {
+    co:  gauss(GAS_NORMAL_CENTER.co,  3,    0,   500),
+    h2s: gauss(GAS_NORMAL_CENTER.h2s, 0.1,  0,   20),
+    co2: gauss(GAS_NORMAL_CENTER.co2, 80,   300, 10000),
+    o2:  gauss(GAS_NORMAL_CENTER.o2,  0.2,  15,  25),
+    no2: gauss(GAS_NORMAL_CENTER.no2, 0.01, 0,   5),
+    so2: gauss(GAS_NORMAL_CENTER.so2, 0.05, 0,   10),
+    o3:  gauss(GAS_NORMAL_CENTER.o3,  0.005,0,   0.5),
+    nh3: gauss(GAS_NORMAL_CENTER.nh3, 2,    0,   100),
+    voc: gauss(GAS_NORMAL_CENTER.voc, 0.03, 0,   5),
+  };
+
+  if (mode === 'mixed') {
+    // 30초마다 CO 주의 이벤트 발생
+    if (tick % 30 === 0 && tick > 0) gas.co = 30 + Math.random() * 50;
+
+    // 60초마다 H2S 위험 이벤트 발생
+    if (tick % 60 === 0 && tick > 0) gas.h2s = 5 + Math.random() * 7;
+
+    // 45초마다 산소 부족 이벤트 발생
+    if (tick % 45 === 0 && tick > 0) gas.o2 = 17 + Math.random() * 2;
+
+    // 매 틱 5% 확률로 VOC 상승
+    if (Math.random() < 0.05) gas.voc = 0.6 + Math.random() * 1.0;
+
+  } else if (mode === 'danger') {
+    // 강제 위험 수치 (시연용)
+    gas.co  = 200 + Math.random() * 150;
+    gas.h2s = 5   + Math.random() * 10;
+    gas.co2 = 5000 + Math.random() * 3000;
+    gas.o2  = 15  + Math.random() * 3;
+  }
+
+  // 소수점 2자리로 정리
+  return Object.fromEntries(
+    Object.entries(gas).map(([k, v]) => [k, +v.toFixed(2)])
+  );
+}
+
+/**
+ * 전력 측정값 생성.
+ */
+function generatePowerValues(tick, mode) {
+  let current = gauss(12, 2, 0, 50);
+  let voltage = gauss(220, 3, 190, 250);
+
+  if (mode === 'danger') {
+    current = 30 + Math.random() * 15;
+    voltage = 195 + Math.random() * 10;
+  } else if (mode === 'mixed' && tick % 50 === 0 && tick > 0) {
+    // 50초마다 과전류 이벤트
+    current = 22 + Math.random() * 8;
+  }
+
+  return {
+    current: +current.toFixed(2),
+    voltage: +voltage.toFixed(2),
+    watt:    +(current * voltage).toFixed(1),
+  };
+}
+
+
+// ────────────────────────────────────────────────────────────
+// 6. 작업자 이동 시뮬레이션
+//
+//    실제 웨어러블 장비가 없으므로 가짜 이동 좌표를 생성한다.
+//    순간이동 없이 이전 위치에서 조금씩 방향을 바꾸며 이동.
+// ────────────────────────────────────────────────────────────
+
+// 작업자 초기 상태 (위치 + 이동 방향/속도)
+const WORKERS = [
+  { worker_id: 'worker_01', name: '작업자 A', x: 300, y: 250, dx: 2.5, dy: 1.5 },
+  { worker_id: 'worker_02', name: '작업자 B', x: 500, y: 400, dx: -2.0, dy: 2.0 },
+];
+
+/**
+ * 작업자를 한 틱 이동시킨다.
+ * dx, dy에 작은 랜덤 변화를 더해 자연스러운 방향 전환 효과.
+ * 이미지 경계에 닿으면 반사(방향 반전).
+ */
+function moveWorker(worker) {
+  // 방향 벡터에 약간의 랜덤 변화 추가
+  worker.dx += (Math.random() - 0.5) * 0.6;
+  worker.dy += (Math.random() - 0.5) * 0.6;
+
+  // 최대 속도 제한 (너무 빠르면 순간이동처럼 보임)
+  worker.dx = Math.max(-4, Math.min(4, worker.dx));
+  worker.dy = Math.max(-4, Math.min(4, worker.dy));
+
+  // 위치 이동
+  worker.x += worker.dx;
+  worker.y += worker.dy;
+
+  // 경계 반사
+  if (worker.x < MARGIN || worker.x > IMG_W - MARGIN) {
+    worker.dx = -worker.dx;
+    worker.x  = Math.max(MARGIN, Math.min(IMG_W - MARGIN, worker.x));
+  }
+  if (worker.y < MARGIN || worker.y > IMG_H - MARGIN) {
+    worker.dy = -worker.dy;
+    worker.y  = Math.max(MARGIN, Math.min(IMG_H - MARGIN, worker.y));
+  }
+}
+
+
+// ────────────────────────────────────────────────────────────
+// 7. Leaflet 지도 초기화
+//
+//    좌표계 정의:
+//    - Leaflet CRS.Simple 사용 → 위경도 대신 픽셀 좌표 사용
+//    - Leaflet 내부: [lat, lng] = [y, x] 순서
+//    - API/DB 저장: [x, y] 순서
+//    - 변환 필요 주의!
+// ────────────────────────────────────────────────────────────
+let map             = null;
+let imageOverlay    = null;
+let geofenceLayerGroup = null;
+let sensorLayerGroup   = null;
+let workerLayerGroup   = null;
+
+function initMap(imgWidth, imgHeight) {
+  IMG_W = imgWidth;
+  IMG_H = imgHeight;
+
+  // 기존 지도가 있으면 제거 (재업로드 대비)
+  if (map) {
+    map.remove();
+    map = null;
+  }
+
+  // CRS.Simple: 픽셀 좌표계 사용 (위경도 없음)
+  map = L.map('map', {
+    crs:      L.CRS.Simple,
+    minZoom:  -3,
+    maxZoom:  3,
+    zoomSnap: 0.25,
+  });
+
+  map.fitBounds([[0, 0], [imgHeight, imgWidth]]);
+
+  // 레이어 그룹 생성 (나중에 ON/OFF 토글에 사용)
+  geofenceLayerGroup = L.layerGroup().addTo(map);
+  sensorLayerGroup   = L.layerGroup().addTo(map);
+  workerLayerGroup   = L.layerGroup().addTo(map);
+
+  // 마우스 위치 좌표 표시
+  map.on('mousemove', function (e) {
+    const x = Math.round(e.latlng.lng);  // lng = x
+    const y = Math.round(e.latlng.lat);  // lat = y
+    document.getElementById('coord-display').textContent = `x: ${x}, y: ${y}`;
+  });
+
+  // 지도 클릭 → 지오펜스 그리기 모드일 때만 처리
+  map.on('click', function (e) {
+    if (isDrawing) addDrawPoint(e.latlng);
+  });
+
+  // DB에서 기존 지오펜스 불러오기
+  loadGeoFences();
+
+  // 센서/작업자 마커 초기 배치
+  initSensorMarkers();
+  initWorkerMarkers();
+
+  // 안내 플레이스홀더 숨기기
+  const placeholder = document.getElementById('map-placeholder');
+  if (placeholder) placeholder.style.display = 'none';
+}
+
+
+// ────────────────────────────────────────────────────────────
+// 8. 센서 마커
+// ────────────────────────────────────────────────────────────
+
+// device_id → Leaflet marker 매핑 (업데이트 시 재사용)
+const sensorMarkerCache = {};
+
+/**
+ * 센서 상태에 따라 마커 아이콘을 생성한다.
+ * - normal:  센서 고유 색상 테두리
+ * - caution: 노란 테두리
+ * - danger:  빨간 테두리 + 글로우 효과
+ */
+function makeSensorIcon(device, status) {
+  const color  = SENSOR_COLORS[device.sensor_type] || '#aaa';
+  const icon   = SENSOR_ICONS[device.sensor_type]  || '📡';
+  const border = status === 'danger'  ? '#e74c3c'
+               : status === 'caution' ? '#f1c40f'
+               : color;
+  const glow   = status === 'danger' ? `box-shadow: 0 0 8px ${border};` : '';
+
+  return L.divIcon({
+    className: '',
+    html: `<div style="
+      background: ${color}22;
+      border: 2px solid ${border};
+      border-radius: 50%;
+      width: 30px; height: 30px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; cursor: pointer;
+      ${glow}
+    ">${icon}</div>`,
+    iconSize:   [30, 30],
+    iconAnchor: [15, 15],
+  });
+}
+
+/**
+ * 센서 마커를 지도에 초기 배치한다.
+ * 위치는 고정 → 이후에는 아이콘만 교체.
+ */
+function initSensorMarkers() {
+  SENSOR_DEVICES.forEach(function (device) {
+    // Leaflet 좌표: [lat, lng] = [y, x]
+    const latlng = [device.location.y, device.location.x];
+    const marker = L.marker(latlng, { icon: makeSensorIcon(device, 'normal') });
+
+    marker.device      = device;   // 마커에 디바이스 정보 저장
+    marker.currentData = null;     // 최신 측정값 (팝업 표시용)
+
+    marker.on('click', function () {
+      openSensorPopup(marker);
+    });
+
+    sensorLayerGroup.addLayer(marker);
+    sensorMarkerCache[device.device_id] = marker;
+  });
+}
+
+/**
+ * 센서 마커 클릭 시 팝업을 열어 현재 측정값을 표시한다.
+ */
+function openSensorPopup(marker) {
+  const device = marker.device;
+  const data   = marker.currentData;
+  if (!data) return;
+
+  const icon        = SENSOR_ICONS[device.sensor_type] || '📡';
+  const statusClass = `status-${data.status}`;
+
+  // 가스 측정값 행 생성
+  let valueRows = '';
+  if (data.gas) {
+    valueRows = Object.entries(data.gas)
+      .map(([key, val]) => `
+        <div class="popup-row">
+          <span class="label">${key.toUpperCase()}</span>
+          <span class="value">${val} ${key === 'o2' ? '%' : 'ppm'}</span>
+        </div>
+      `)
+      .join('');
+  } else if (data.power) {
+    valueRows = `
+      <div class="popup-row"><span class="label">전류</span><span class="value">${data.power.current} A</span></div>
+      <div class="popup-row"><span class="label">전압</span><span class="value">${data.power.voltage} V</span></div>
+      <div class="popup-row"><span class="label">전력</span><span class="value">${data.power.watt} W</span></div>
+    `;
+  }
+
+  marker.bindPopup(`
+    <div class="popup-title">${icon} ${device.device_name}</div>
+    <div class="popup-row">
+      <span class="label">상태</span>
+      <span class="value"><span class="status-badge ${statusClass}">${data.status}</span></span>
+    </div>
+    ${valueRows}
+    <div class="popup-row">
+      <span class="label">위치</span>
+      <span class="value">x: ${device.location.x}, y: ${device.location.y}</span>
+    </div>
+  `, { maxWidth: 220 }).openPopup();
+}
+
+/**
+ * 1초마다 호출되어 센서 마커 아이콘을 최신 상태로 교체한다.
+ * 위치는 변경하지 않고 아이콘만 교체 → 위치가 고정되어 보임.
+ */
+function updateSensorMarker(device, data) {
+  const marker = sensorMarkerCache[device.device_id];
+  if (!marker) return;
+
+  marker.setIcon(makeSensorIcon(device, data.status));
+  marker.currentData = data;  // 팝업에서 사용할 최신 데이터 저장
+}
+
+
+// ────────────────────────────────────────────────────────────
+// 9. 작업자 마커
+// ────────────────────────────────────────────────────────────
+
+// worker_id → Leaflet marker 매핑
+const workerMarkerCache = {};
+
+// 작업자 공통 아이콘 (상태에 따른 변화 없음 — 단순 위치만 추적)
+const WORKER_ICON = L.divIcon({
+  className: '',
+  html: `<div style="
+    background: #2ecc7122;
+    border: 2px solid #2ecc71;
+    border-radius: 50%;
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+  ">👷</div>`,
+  iconSize:   [28, 28],
+  iconAnchor: [14, 14],
+});
+
+/**
+ * 작업자 마커를 초기 위치에 배치한다.
+ */
+function initWorkerMarkers() {
+  WORKERS.forEach(function (worker) {
+    const marker = L.marker([worker.y, worker.x], { icon: WORKER_ICON })
+      .bindTooltip(worker.name, { permanent: false, direction: 'top' });
+
+    workerLayerGroup.addLayer(marker);
+    workerMarkerCache[worker.worker_id] = marker;
+  });
+}
+
+/**
+ * 모든 작업자를 한 틱 이동시키고 마커 위치를 갱신한다.
+ */
+function updateWorkerMarkers() {
+  WORKERS.forEach(function (worker) {
+    moveWorker(worker);  // 위치 계산
+
+    const marker = workerMarkerCache[worker.worker_id];
+    if (marker) {
+      // Leaflet: [lat, lng] = [y, x]
+      marker.setLatLng([worker.y, worker.x]);
+    }
+  });
+}
+
+
+// ────────────────────────────────────────────────────────────
+// 10. 사이드바 센서 카드 업데이트
+// ────────────────────────────────────────────────────────────
+
+/**
+ * 사이드바에 센서 상태 카드를 추가하거나 업데이트한다.
+ * 카드 클릭 시 지도에서 해당 센서로 이동 + 팝업 열림.
+ */
+function updateSensorCard(device, data) {
+  const cardId = `card-${device.device_id}`;
+  let card = document.getElementById(cardId);
+
+  const icon        = SENSOR_ICONS[device.sensor_type] || '📡';
+  const statusClass = `status-${data.status}`;
+
+  // 요약 표시할 값
+  let valueSummary = '';
+  if (data.gas) {
+    valueSummary = `CO: ${data.gas.co}  H2S: ${data.gas.h2s}  O2: ${data.gas.o2}  CO2: ${data.gas.co2}`;
+  } else if (data.power) {
+    valueSummary = `${data.power.current}A / ${data.power.voltage}V / ${data.power.watt}W`;
+  }
+
+  // 첫 번째 틱: 카드 새로 생성
+  if (!card) {
+    card = document.createElement('div');
+    card.id        = cardId;
+    card.className = `sensor-card ${statusClass}`;
+    card.onclick   = function () {
+      const marker = sensorMarkerCache[device.device_id];
+      if (marker && map) {
+        map.setView(marker.getLatLng(), map.getZoom());
+        openSensorPopup(marker);
+      }
+    };
+    document.getElementById('sensor-list').appendChild(card);
+  }
+
+  // 상태가 바뀌면 카드 스타일도 갱신
+  card.className = `sensor-card ${statusClass}`;
+  card.innerHTML = `
+    <div class="sensor-card-header">
+      <span class="sensor-card-name">${icon} ${device.device_name}</span>
+      <span class="status-badge ${statusClass}">${data.status}</span>
+    </div>
+    <div class="sensor-card-vals">${valueSummary}</div>
+  `;
+}
+
+
+// ────────────────────────────────────────────────────────────
+// 11. 알람 패널
+// ────────────────────────────────────────────────────────────
+
+let unreadCount = 0;  // 읽지 않은 알람 수
+
+/**
+ * 알람을 사이드바 패널에 추가한다.
+ * 최신 알람이 위에 표시되며, 최대 30개 유지.
+ */
+function addAlarmToPanel(alarm) {
+  const list  = document.getElementById('alarm-list');
+  const empty = list.querySelector('.alarm-empty');
+  if (empty) empty.remove();  // "알람이 없습니다" 문구 제거
+
+  const levelClass = `level-${alarm.alarm_level}`;
+  const emoji = {
+    info:     'ℹ️',
+    caution:  '⚠️',
+    danger:   '🔴',
+    critical: '🚨',
+  }[alarm.alarm_level] || '⚠️';
+
+  const item = document.createElement('div');
+  item.className  = `alarm-item unread ${levelClass}`;
+  item.dataset.id = alarm.alarm_id;
+  item.innerHTML  = `
+    <div class="alarm-msg">${emoji} ${alarm.message}</div>
+    <div class="alarm-meta">${new Date().toLocaleTimeString('ko-KR')}</div>
+  `;
+
+  // 클릭하면 읽음 처리
+  item.onclick = function () {
+    item.classList.remove('unread');
+    markAlarmRead(alarm.alarm_id);
+    unreadCount = Math.max(0, unreadCount - 1);
+    updateUnreadBadge();
+  };
+
+  // 최신 항목을 맨 위에 추가
+  list.insertBefore(item, list.firstChild);
+
+  // 30개 초과 시 가장 오래된 항목 제거
+  const allItems = list.querySelectorAll('.alarm-item');
+  if (allItems.length > 30) {
+    allItems[allItems.length - 1].remove();
+  }
+
+  // 뱃지 카운트 증가
+  unreadCount++;
+  updateUnreadBadge();
+}
+
+/**
+ * 읽지 않은 알람 수 뱃지를 갱신한다.
+ */
+function updateUnreadBadge() {
+  const badge = document.getElementById('alarm-badge');
+  badge.textContent = unreadCount;
+  badge.style.display = unreadCount > 0 ? 'inline' : 'none';
+}
+
+/**
+ * 지도 우상단에 토스트 팝업으로 알람을 표시한다.
+ * 5초 후 자동으로 사라짐. 클릭하면 즉시 닫힘.
+ */
+function showAlarmToast(alarm) {
+  const container = document.getElementById('alarm-toast-container');
+  const levelClass = `toast-${alarm.alarm_level}`;
+  const emoji = {
+    info:     'ℹ️',
+    caution:  '⚠️',
+    danger:   '🔴',
+    critical: '🚨',
+  }[alarm.alarm_level] || '⚠️';
+
+  const toast = document.createElement('div');
+  toast.className   = `alarm-toast ${levelClass}`;
+  toast.textContent = `${emoji} ${alarm.message}`;
+  toast.onclick     = function () { toast.remove(); };
+
+  container.appendChild(toast);
+
+  // 5초 후 자동 제거
+  setTimeout(function () {
+    if (toast.parentNode) toast.remove();
+  }, 5000);
+}
+
+/**
+ * 특정 알람을 읽음 처리한다 (서버 API 호출).
+ */
+async function markAlarmRead(alarmId) {
+  try {
+    await fetch(`/monitor/api/alarm/${alarmId}/read/`, {
+      method:  'PATCH',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    });
+  } catch (e) {
+    // 읽음 처리 실패는 무시 (UI는 이미 반영됨)
+  }
+}
+
+/**
+ * 모든 알람을 읽음 처리한다.
+ */
+async function readAllAlarms() {
+  try {
+    await fetch('/monitor/api/alarm/read_all/', {
+      method:  'PATCH',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    });
+    document.querySelectorAll('.alarm-item.unread').forEach(function (el) {
+      el.classList.remove('unread');
+    });
+    unreadCount = 0;
+    updateUnreadBadge();
+  } catch (e) {
+    console.error('전체 읽음 처리 실패:', e);
+  }
+}
+
+
+// ────────────────────────────────────────────────────────────
+// 12. 지오펜스 내부 판별 API 호출
+//
+//    흐름:
+//    1. 작업자 현재 좌표 + 이상 센서 목록을 서버로 전송
+//    2. 서버(geofence_service.py)가 Ray Casting 알고리즘으로 판별
+//    3. 응답에 포함된 알람을 화면에 표시
+//
+//    중복 방지:
+//    같은 알람이 매초 반복 발생하지 않도록
+//    최근 30초 내 동일 키의 알람은 무시한다.
+// ────────────────────────────────────────────────────────────
+
+// 최근 발생한 알람 키 저장 (Map: key → 발생 시각)
+const recentAlarmKeys = new Map();
+
+/**
+ * 알람 키가 최근 30초 내에 이미 발생했는지 확인한다.
+ * 발생하지 않았으면 false를 반환하고 키를 등록한다.
+ */
+function isAlarmDuplicate(key) {
+  const now  = Date.now();
+  const last = recentAlarmKeys.get(key);
+
+  if (last && now - last < 30000) {
+    return true;  // 30초 내 중복 → 무시
+  }
+
+  recentAlarmKeys.set(key, now);
+  return false;
+}
+
+/**
+ * 서버에 지오펜스 내부 판별을 요청한다.
+ * 1초마다 시뮬레이션 루프에서 호출됨.
+ *
+ * @param {Array} sensorDataList - 이번 틱에 생성된 센서 데이터 배열
+ */
+async function checkGeofence(sensorDataList) {
+  if (!map) return;  // 지도가 초기화되지 않았으면 skip
+
+  // 작업자 현재 위치 (정수로 반올림)
+  const workersPayload = WORKERS.map(function (w) {
+    return {
+      worker_id: w.worker_id,
+      name:      w.name,
+      x:         Math.round(w.x),
+      y:         Math.round(w.y),
+    };
+  });
+
+  // 이상 센서만 포함 (정상 센서는 굳이 전송할 필요 없음)
+  const sensorsPayload = sensorDataList
+    .filter(function (s) { return s.status !== 'normal'; })
+    .map(function (s) {
+      return {
+        device_id:   s.device_id,
+        sensor_type: s.sensor_type,
+        status:      s.status,
+        detail:      s.detail || '',
+      };
+    });
+
+  try {
+    const response = await fetch('/monitor/api/check-geofence/', {
+      method:  'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken':  getCsrfToken(),
+      },
+      body: JSON.stringify({
+        workers: workersPayload,
+        sensors: sensorsPayload,
+      }),
+    });
+
+    if (!response.ok) return;
+
+    const data = await response.json();
+
+    // 알람 처리
+    data.alarms.forEach(function (alarm) {
+      // 중복 알람 무시
+      const key = [
+        alarm.alarm_type,
+        alarm.worker_id   || '',
+        alarm.geofence_id || '',
+        alarm.device_id   || '',
+      ].join('-');
+
+      if (isAlarmDuplicate(key)) return;
+
+      // 패널 + 토스트에 표시
+      addAlarmToPanel(alarm);
+      showAlarmToast(alarm);
+    });
+
+  } catch (e) {
+    console.warn('지오펜스 체크 실패:', e);
+  }
+}
+
+
+// ────────────────────────────────────────────────────────────
+// 13. 시뮬레이션 메인 루프 (1초 주기)
+// ────────────────────────────────────────────────────────────
+
+let simTick = 0;       // 경과 틱 수 (1틱 = 1초)
+let simMode = 'mixed'; // 현재 시나리오 모드
+
+/**
+ * 시나리오 모드를 전환한다.
+ * 버튼 클릭 시 호출.
+ */
+function setScenario(mode) {
+  simMode = mode;
+
+  // 버튼 활성화 표시 갱신
+  document.querySelectorAll('.scenario-btn').forEach(function (btn) {
+    btn.classList.remove('active');
+  });
+  document.querySelector(`.scenario-btn.${mode}`).classList.add('active');
+
+  const labels = { normal: '정상', mixed: '혼합', danger: '위험' };
+  document.getElementById('sim-mode-label').textContent = `모드: ${labels[mode]}`;
+}
+
+/**
+ * 1초마다 실행되는 시뮬레이션 메인 루프.
+ *
+ * 순서:
+ * 1. 센서 데이터 생성 + 마커/카드 업데이트
+ * 2. 작업자 이동 + 마커 위치 갱신
+ * 3. 지오펜스 내부 판별 API 호출 (매 틱, 1초 주기)
+ * 4. 틱 카운터 증가
+ */
+function runSimTick() {
+  if (!map) return;  // 지도 초기화 전에는 실행 안 함
+
+  // 1. 센서 데이터 생성
+  const sensorDataList = [];
+
+  SENSOR_DEVICES.forEach(function (device) {
+    let data;
+
+    if (device.sensor_type === 'gas') {
+      const gas    = generateGasValues(simTick, simMode);
+      const status = classifyGasStatus(gas);
+      const detail = `CO: ${gas.co}, H2S: ${gas.h2s}`;
+      data = { gas, status, device_id: device.device_id, sensor_type: device.sensor_type, detail };
+
+    } else {
+      const power  = generatePowerValues(simTick, simMode);
+      const status = classifyPowerStatus(power);
+      const detail = `전류: ${power.current}A`;
+      data = { power, status, device_id: device.device_id, sensor_type: device.sensor_type, detail };
+    }
+
+    // 지도 마커 + 사이드바 카드 업데이트
+    updateSensorMarker(device, data);
+    updateSensorCard(device, data);
+    sensorDataList.push(data);
+  });
+
+  // 2. 작업자 이동
+  updateWorkerMarkers();
+
+  // 3. 지오펜스 내부 판별 (1초마다)
+  checkGeofence(sensorDataList);
+
+  // 4. 틱 증가 + UI 갱신
+  simTick++;
+  document.getElementById('sim-tick').textContent = simTick;
+}
+
+// 1초 간격으로 루프 실행
+setInterval(runSimTick, 1000);
+
+
+// ────────────────────────────────────────────────────────────
+// 14. 이미지 업로드 처리
+// ────────────────────────────────────────────────────────────
+
+document.getElementById('file-input').addEventListener('change', function (e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = function (evt) {
+    const img = new Image();
+
+    img.onload = function () {
+      const W = img.naturalWidth;
+      const H = img.naturalHeight;
+
+      // 지도 초기화 (이미지 크기 기준)
+      initMap(W, H);
+
+      // 이미지를 지도 위에 오버레이
+      if (imageOverlay) imageOverlay.remove();
+      imageOverlay = L.imageOverlay(evt.target.result, [[0, 0], [H, W]]).addTo(map);
+      map.fitBounds([[0, 0], [H, W]]);
+
+      // 업로드 UI 갱신
+      document.getElementById('upload-area').classList.add('has-image');
+      document.getElementById('upload-label').textContent = file.name;
+      document.querySelector('#upload-area p').textContent = `${W} × ${H} px`;
+    };
+
+    img.src = evt.target.result;
+  };
+
+  reader.readAsDataURL(file);
+});
+
+
+// ────────────────────────────────────────────────────────────
+// 15. 지오펜스 그리기
+//
+//    흐름:
+//    1. "그리기" 버튼 클릭 → isDrawing = true
+//    2. 지도 클릭마다 addDrawPoint() 호출
+//    3. 3개 이상 찍은 후 첫 점 근처 클릭 → 자동 완성
+//    4. 또는 "그리기 완료" 버튼 재클릭 → finishPolygon()
+//    5. 모달 열려서 구역명/유형/위험도 입력 후 저장
+// ────────────────────────────────────────────────────────────
+
+let isDrawing      = false;  // 그리기 모드 여부
+let drawPoints     = [];     // 클릭한 좌표 배열 (Leaflet LatLng)
+let drawMarkers    = [];     // 임시 원형 마커 (그리는 중 표시)
+let drawPolyline   = null;   // 실시간 연결선
+let pendingPolygon = null;   // 완성된 polygon (저장 전 임시)
+let pendingCoords  = [];     // 저장할 좌표 [[x,y], ...] (API 전송용)
+
+/**
+ * 그리기 모드를 토글한다.
+ */
+function toggleDrawMode() {
+  if (!map) {
+    alert('먼저 공장 평면도 이미지를 업로드하세요.');
+    return;
+  }
+
+  isDrawing = !isDrawing;
+  const btn  = document.getElementById('draw-fence-btn');
+  const hint = document.getElementById('draw-hint');
+
+  if (isDrawing) {
+    btn.textContent = '✔ 그리기 완료';
+    btn.classList.add('drawing');
+    hint.style.display = 'block';
+    map.getContainer().style.cursor = 'crosshair';
+  } else {
+    if (drawPoints.length >= 3) {
+      finishPolygon();
+    } else {
+      alert('최소 3개 이상의 점을 찍어야 합니다.');
+      resetDraw();
+    }
+  }
+}
+
+/**
+ * 지도 클릭 시 꼭짓점을 추가한다.
+ * 3개 이상 찍은 후 첫 번째 점 근처 클릭하면 자동 완성.
+ */
+function addDrawPoint(latlng) {
+  drawPoints.push(latlng);
+
+  // 임시 마커 표시
+  const marker = L.circleMarker(latlng, {
+    radius:      5,
+    color:       '#e67e22',
+    fillColor:   '#e67e22',
+    fillOpacity: 1,
+    weight:      2,
+  }).addTo(map);
+  drawMarkers.push(marker);
+
+  // 3개 이상이고 첫 번째 점 근처 클릭하면 자동 완성
+  if (drawPoints.length >= 3) {
+    const distToFirst = map.distance(latlng, drawPoints[0]);
+    if (distToFirst < 15) {
+      finishPolygon();
+      return;
+    }
+  }
+
+  // 실시간 연결선 업데이트
+  if (drawPolyline) drawPolyline.remove();
+  drawPolyline = L.polyline(drawPoints, {
+    color:     '#e67e22',
+    weight:    2,
+    dashArray: '5, 5',
+  }).addTo(map);
+}
+
+/**
+ * 다각형 그리기를 완성한다.
+ * 임시 요소를 지우고 완성된 polygon을 표시한 뒤 모달을 열어 저장을 요청한다.
+ */
+function finishPolygon() {
+  if (drawPoints.length < 3) return;
+
+  // 완성된 polygon 표시 (임시 — 주황색)
+  if (pendingPolygon) pendingPolygon.remove();
+  pendingPolygon = L.polygon(drawPoints, {
+    color:       '#e67e22',
+    fillColor:   '#e67e22',
+    fillOpacity: 0.25,
+    weight:      2,
+  }).addTo(map);
+
+  // 좌표 변환: Leaflet [lat, lng] → API [x, y]
+  // CRS.Simple에서 lat = y, lng = x
+  pendingCoords = drawPoints.map(function (p) {
+    return [Math.round(p.lng), Math.round(p.lat)];
+  });
+
+  // 임시 그리기 요소 제거
+  drawMarkers.forEach(function (m) { m.remove(); });
+  drawMarkers = [];
+  if (drawPolyline) { drawPolyline.remove(); drawPolyline = null; }
+  drawPoints = [];
+
+  // 그리기 모드 종료
+  isDrawing = false;
+  document.getElementById('draw-fence-btn').textContent = '✏️ 지오펜스 그리기';
+  document.getElementById('draw-fence-btn').classList.remove('drawing');
+  document.getElementById('draw-hint').style.display = 'none';
+  map.getContainer().style.cursor = '';
+
+  // 저장 모달 열기
+  openModal();
+}
+
+/**
+ * 그리기를 취소하고 모든 임시 요소를 제거한다.
+ */
+function clearCurrentDraw() {
+  resetDraw();
+  if (pendingPolygon) { pendingPolygon.remove(); pendingPolygon = null; }
+  pendingCoords = [];
+}
+
+/**
+ * 그리기 상태를 초기화한다 (내부용).
+ */
+function resetDraw() {
+  isDrawing = false;
+  drawPoints = [];
+
+  drawMarkers.forEach(function (m) { m.remove(); });
+  drawMarkers = [];
+
+  if (drawPolyline) { drawPolyline.remove(); drawPolyline = null; }
+
+  document.getElementById('draw-fence-btn').textContent = '✏️ 지오펜스 그리기';
+  document.getElementById('draw-fence-btn').classList.remove('drawing');
+  document.getElementById('draw-hint').style.display = 'none';
+
+  if (map) map.getContainer().style.cursor = '';
+}
+
+
+// ────────────────────────────────────────────────────────────
+// 16. 모달 열기/닫기
+// ────────────────────────────────────────────────────────────
+
+function openModal() {
+  document.getElementById('fence-modal').classList.add('open');
+  document.getElementById('fence-name').focus();
+}
+
+function closeModal() {
+  document.getElementById('fence-modal').classList.remove('open');
+
+  // 임시 polygon 제거 (저장 취소)
+  if (pendingPolygon) { pendingPolygon.remove(); pendingPolygon = null; }
+  pendingCoords = [];
+
+  // 폼 초기화
+  document.getElementById('fence-name').value = '';
+  document.getElementById('fence-desc').value = '';
+}
+
+
+// ────────────────────────────────────────────────────────────
+// 17. 지오펜스 API (저장 / 불러오기 / 삭제)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * 모달에서 입력한 정보와 polygon 좌표를 서버에 저장한다.
+ */
+async function saveGeoFence() {
+  const name = document.getElementById('fence-name').value.trim();
+
+  if (!name) {
+    alert('구역명을 입력하세요.');
+    return;
+  }
+  if (pendingCoords.length < 3) {
+    alert('좌표가 없습니다. 다시 그려주세요.');
+    return;
+  }
+
+  const payload = {
+    name,
+    zone_type:   document.getElementById('fence-type').value,
+    risk_level:  document.getElementById('fence-risk').value,
+    description: document.getElementById('fence-desc').value.trim(),
+    polygon:     pendingCoords,
+  };
+
+  try {
+    const response = await fetch('/monitor/api/geofence/', {
+      method:  'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken':  getCsrfToken(),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) throw new Error(await response.text());
+
+    const data = await response.json();
+
+    // 모달 닫기 + 폼 초기화
+    document.getElementById('fence-modal').classList.remove('open');
+    document.getElementById('fence-name').value = '';
+    document.getElementById('fence-desc').value = '';
+    pendingCoords = [];
+
+    // 지도 + 사이드바에 즉시 반영
+    renderGeoFence(data);
+    addToSidebarList(data);
+
+    // 임시 polygon 제거 (저장된 polygon으로 교체됨)
+    if (pendingPolygon) { pendingPolygon.remove(); pendingPolygon = null; }
+
+  } catch (err) {
+    alert('저장 실패: ' + err.message);
+  }
+}
+
+/**
+ * 서버에서 지오펜스 목록을 불러와 지도와 사이드바에 표시한다.
+ * 페이지 초기 로드(initMap) 시 호출.
+ */
+async function loadGeoFences() {
+  try {
+    const response = await fetch('/monitor/api/geofence/');
+    const data     = await response.json();
+    const list     = data.results || data;
+
+    if (list.length === 0) return;
+
+    // 기존 "없음" 문구 제거
+    document.getElementById('geofence-list').innerHTML = '';
+
+    list.forEach(function (fence) {
+      renderGeoFence(fence);
+      addToSidebarList(fence);
+    });
+
+  } catch (err) {
+    console.error('지오펜스 불러오기 실패:', err);
+  }
+}
+
+/**
+ * 지오펜스 데이터를 Leaflet polygon으로 지도에 그린다.
+ */
+function renderGeoFence(fence) {
+  // 좌표 변환: API [x, y] → Leaflet [lat, lng] = [y, x]
+  const latlngs = fence.polygon.map(function ([x, y]) { return [y, x]; });
+  const color   = ZONE_COLORS[fence.zone_type] || '#aaa';
+
+  const poly = L.polygon(latlngs, {
+    color,
+    fillColor:   color,
+    fillOpacity: 0.2,
+    weight:      2,
+  });
+
+  poly.bindPopup(`
+    <div class="popup-title">${fence.name}</div>
+    <div class="popup-row"><span class="label">유형</span><span class="value">${fence.zone_type}</span></div>
+    <div class="popup-row"><span class="label">위험도</span><span class="value">${fence.risk_level}</span></div>
+    <div class="popup-row"><span class="label">설명</span><span class="value">${fence.description || '–'}</span></div>
+  `);
+
+  poly.fenceId = fence.id;  // 삭제 시 찾기 위한 ID 저장
+  geofenceLayerGroup.addLayer(poly);
+}
+
+/**
+ * 사이드바 지오펜스 목록에 항목을 추가한다.
+ * 클릭 시 지도에서 해당 구역으로 이동.
+ */
+function addToSidebarList(fence) {
+  const list  = document.getElementById('geofence-list');
+  const empty = list.querySelector('p');
+  if (empty) empty.remove();
+
+  const color = ZONE_COLORS[fence.zone_type] || '#aaa';
+
+  const item = document.createElement('div');
+  item.className  = 'geofence-item';
+  item.dataset.id = fence.id;
+  item.innerHTML  = `
+    <div class="geofence-dot" style="background: ${color}"></div>
+    <div class="geofence-info">
+      <div class="name">${fence.name}</div>
+      <div class="meta">${fence.zone_type} · ${fence.risk_level}</div>
+    </div>
+    <button class="delete-btn" onclick="deleteGeoFence(${fence.id})">✕</button>
+  `;
+
+  // 클릭 시 지도에서 해당 구역으로 이동
+  item.addEventListener('click', function (e) {
+    if (e.target.classList.contains('delete-btn')) return;
+
+    geofenceLayerGroup.eachLayer(function (layer) {
+      if (layer.fenceId === fence.id) {
+        map.fitBounds(layer.getBounds());
+        layer.openPopup();
+      }
+    });
+  });
+
+  list.appendChild(item);
+}
+
+/**
+ * 지오펜스를 삭제한다 (소프트 삭제 — is_active = false).
+ */
+async function deleteGeoFence(id) {
+  if (!confirm('이 위험 구역을 삭제하시겠습니까?')) return;
+
+  try {
+    const response = await fetch(`/monitor/api/geofence/${id}/`, {
+      method:  'DELETE',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    });
+
+    if (response.status === 204) {
+      // 지도에서 제거
+      geofenceLayerGroup.eachLayer(function (layer) {
+        if (layer.fenceId === id) geofenceLayerGroup.removeLayer(layer);
+      });
+
+      // 사이드바에서 제거
+      const item = document.querySelector(`.geofence-item[data-id="${id}"]`);
+      if (item) item.remove();
+
+      // 목록이 비면 안내 문구 복원
+      if (!document.getElementById('geofence-list').children.length) {
+        document.getElementById('geofence-list').innerHTML =
+          '<p style="font-size: 10px; color: #3a3f55; text-align: center; padding: 10px;">지오펜스가 없습니다.</p>';
+      }
+    }
+  } catch (err) {
+    alert('삭제 실패: ' + err.message);
+  }
+}
+
+
+// ────────────────────────────────────────────────────────────
+// 18. 레이어 ON/OFF 토글
+// ────────────────────────────────────────────────────────────
+
+document.getElementById('layer-geofence').addEventListener('change', function () {
+  if (!map) return;
+  this.checked ? map.addLayer(geofenceLayerGroup) : map.removeLayer(geofenceLayerGroup);
+});
+
+document.getElementById('layer-sensor').addEventListener('change', function () {
+  if (!map) return;
+  this.checked ? map.addLayer(sensorLayerGroup) : map.removeLayer(sensorLayerGroup);
+});
+
+document.getElementById('layer-worker').addEventListener('change', function () {
+  if (!map) return;
+  this.checked ? map.addLayer(workerLayerGroup) : map.removeLayer(workerLayerGroup);
+});
+
+
+// ────────────────────────────────────────────────────────────
+// 19. 유틸리티 함수
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Django CSRF 토큰을 쿠키에서 읽어온다.
+ * POST/PATCH/DELETE 요청 시 헤더에 포함해야 함.
+ */
+function getCsrfToken() {
+  const cookie = document.cookie.split(';').find(function (c) {
+    return c.trim().startsWith('csrftoken=');
+  });
+  return cookie ? cookie.split('=')[1] : '';
+}
+
+
+// ────────────────────────────────────────────────────────────
+// 초기 실행: 지도 없을 때 플레이스홀더 표시
+// ────────────────────────────────────────────────────────────
+(function () {
+  const placeholder = document.createElement('div');
+  placeholder.id    = 'map-placeholder';
+  placeholder.innerHTML = `
+    <div class="icon">📐</div>
+    <p>왼쪽에서 공장 평면도 이미지를 업로드하면<br>이 화면에 지도가 표시됩니다.</p>
+  `;
+  document.getElementById('map-container').appendChild(placeholder);
+})();
+</script>
+
+</body>
+</html>
