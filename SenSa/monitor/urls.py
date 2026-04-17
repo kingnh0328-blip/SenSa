@@ -16,7 +16,7 @@ router = DefaultRouter()
 router.register(r'geofence', views.GeoFenceViewSet, basename='geofence')
 router.register(r'device',   views.DeviceViewSet,   basename='device')
 router.register(r'alarm',    views.AlarmViewSet,    basename='alarm')
-
+router.register(r'map',      views.MapImageViewSet, basename='map') 
 
 # ============================================================
 # URL 패턴

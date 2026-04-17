@@ -1657,34 +1657,76 @@ setInterval(runSimTick, 1000);
 
 
 // ────────────────────────────────────────────────────────────
-// 14. 이미지 업로드 처리
+// 14. 이미지 업로드 처리 (서버 저장 버전)
 // ────────────────────────────────────────────────────────────
 
+/**
+ * 업로드된 지도를 화면에 표시한다.
+ * 업로드 직후와 페이지 로드 시 모두 호출됨.
+ */
+function displayMap(imageUrl, width, height, fileName) {
+  // 지도 초기화
+  initMap(width, height);
+
+  // 이미지 오버레이
+  if (imageOverlay) imageOverlay.remove();
+  imageOverlay = L.imageOverlay(imageUrl, [[0, 0], [height, width]]).addTo(map);
+  map.fitBounds([[0, 0], [height, width]]);
+
+  // 업로드 UI 갱신
+  document.getElementById('upload-area').classList.add('has-image');
+  document.getElementById('upload-label').textContent = fileName || '지도 로드됨';
+  document.querySelector('#upload-area p').textContent = `${width} × ${height} px`;
+}
+
+/**
+ * 파일 선택 시 서버로 업로드한다.
+ */
 document.getElementById('file-input').addEventListener('change', function (e) {
   const file = e.target.files[0];
   if (!file) return;
 
+  // 먼저 이미지 크기를 읽어옴 (서버에 함께 전송)
   const reader = new FileReader();
 
   reader.onload = function (evt) {
     const img = new Image();
 
-    img.onload = function () {
+    img.onload = async function () {
       const W = img.naturalWidth;
       const H = img.naturalHeight;
 
-      // 지도 초기화 (이미지 크기 기준)
-      initMap(W, H);
+      // 서버에 업로드
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('name', file.name);
+      formData.append('width', W);
+      formData.append('height', H);
 
-      // 이미지를 지도 위에 오버레이
-      if (imageOverlay) imageOverlay.remove();
-      imageOverlay = L.imageOverlay(evt.target.result, [[0, 0], [H, W]]).addTo(map);
-      map.fitBounds([[0, 0], [H, W]]);
+      try {
+        const response = await fetch('/monitor/api/map/', {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: formData,
+        });
 
-      // 업로드 UI 갱신
-      document.getElementById('upload-area').classList.add('has-image');
-      document.getElementById('upload-label').textContent = file.name;
-      document.querySelector('#upload-area p').textContent = `${W} × ${H} px`;
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(errText);
+        }
+
+        const data = await response.json();
+        // 서버에 저장된 URL로 지도 표시 (새로고침해도 유지됨)
+        displayMap(data.image, data.width, data.height, data.name);
+        console.log('✅ 지도가 저장되었습니다.');
+
+      } catch (err) {
+        console.error('업로드 실패:', err);
+        alert('지도 업로드 실패: ' + err.message);
+      }
     };
 
     img.src = evt.target.result;
@@ -1692,6 +1734,30 @@ document.getElementById('file-input').addEventListener('change', function (e) {
 
   reader.readAsDataURL(file);
 });
+
+/**
+ * 페이지 로드 시 저장된 지도를 불러온다.
+ */
+async function loadSavedMap() {
+  try {
+    const response = await fetch('/monitor/api/map/current/', {
+      credentials: 'include',
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      displayMap(data.image, data.width, data.height, data.name);
+      console.log('✅ 저장된 지도를 불러왔습니다.');
+    } else if (response.status === 404) {
+      console.log('ℹ️ 업로드된 지도가 없습니다.');
+    }
+  } catch (err) {
+    console.error('지도 불러오기 실패:', err);
+  }
+}
+
+// 페이지 로드 시 저장된 지도 불러오기
+document.addEventListener('DOMContentLoaded', loadSavedMap);
 
 
 // ────────────────────────────────────────────────────────────

@@ -4,8 +4,13 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import GeoFence, Device, Alarm
-from .serializers import GeoFenceSerializer, DeviceSerializer, AlarmSerializer
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser
+
+from django.contrib.auth.decorators import login_required
+
+from .models import GeoFence, Device, Alarm, MapImage
+from .serializers import GeoFenceSerializer, DeviceSerializer, AlarmSerializer, MapImageSerializer
 from .geofence_service import (
     check_worker_in_geofences,
     create_sensor_alarm,
@@ -13,6 +18,7 @@ from .geofence_service import (
 )
 
 
+@login_required(login_url='/accounts/login/')
 def map_view(request):
     return render(request, 'monitor/map.html')
 
@@ -168,3 +174,33 @@ class AlarmViewSet(viewsets.ReadOnlyModelViewSet):
         """전체 알람 읽음 처리 — PATCH /monitor/api/alarm/read_all/"""
         Alarm.objects.filter(is_read=False).update(is_read=True)
         return Response({'status': 'all read'})
+
+# ════════════════════════════════════════════
+# 공장 평면도 이미지 CRUD
+# ════════════════════════════════════════════
+class MapImageViewSet(viewsets.ModelViewSet):
+    """
+    - POST /monitor/api/map/         : 새 지도 업로드
+    - GET  /monitor/api/map/current/ : 현재 활성 지도 조회
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    queryset = MapImage.objects.all()
+    serializer_class = MapImageSerializer
+
+    def perform_create(self, serializer):
+        # 새 지도 업로드 시 기존 활성 지도 비활성화 (하나만 활성)
+        MapImage.objects.filter(is_active=True).update(is_active=False)
+        serializer.save(is_active=True)
+
+    @action(detail=False, methods=['get'])
+    def current(self, request):
+        """현재 활성 지도 조회"""
+        current_map = MapImage.objects.filter(is_active=True).first()
+        if current_map:
+            serializer = self.get_serializer(current_map)
+            return Response(serializer.data)
+        return Response(
+            {'detail': '업로드된 지도가 없습니다.'},
+            status=status.HTTP_404_NOT_FOUND
+        )

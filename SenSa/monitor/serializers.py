@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import GeoFence, Device, Alarm
+from .models import GeoFence, Device, Alarm, MapImage
 
 
 class GeoFenceSerializer(serializers.ModelSerializer):
@@ -30,3 +30,9 @@ class AlarmSerializer(serializers.ModelSerializer):
             'message', 'is_read', 'created_at',
         ]
         read_only_fields = ['id', 'created_at']
+
+class MapImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MapImage
+        fields = ['id', 'image', 'name', 'width', 'height', 'is_active', 'uploaded_at']
+        read_only_fields = ['uploaded_at']

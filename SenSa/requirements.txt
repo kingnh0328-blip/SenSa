@@ -25,3 +25,4 @@ sqlparse==0.5.5
 tomli==2.4.0
 typing-extensions==4.15.0
 virtualenv==21.2.0
+pillow==12.2.0
