@@ -16,7 +16,8 @@ from .geofence_service import (
     create_sensor_alarm,
     create_combined_alarm,
 )
-
+from .models import SensorData
+import random
 
 @login_required(login_url='/accounts/login/')
 def map_view(request):
@@ -204,3 +205,56 @@ class MapImageViewSet(viewsets.ModelViewSet):
             {'detail': '업로드된 지도가 없습니다.'},
             status=status.HTTP_404_NOT_FOUND
         )
+
+        # ════════════════════════════════════════════
+# 센서 데이터 히스토리 API
+# GET  /monitor/api/sensor-data/?device_id=sensor_01&limit=20
+# POST /monitor/api/sensor-data/
+# ════════════════════════════════════════════
+class SensorDataView(APIView):
+
+    def get(self, request):
+        device_id = request.query_params.get('device_id')
+        limit = int(request.query_params.get('limit', 20))
+
+        try:
+            device = Device.objects.get(device_id=device_id)
+            data = SensorData.objects.filter(device=device)[:limit]
+            result = [{
+                'timestamp': d.timestamp.strftime('%H:%M:%S'),
+                'co':  d.co,
+                'h2s': d.h2s,
+                'co2': d.co2,
+                'status': d.status,
+            } for d in reversed(list(data))]
+            return Response({'device_id': device_id, 'data': result})
+        except Device.DoesNotExist:
+            return Response({'error': '센서 없음'}, status=404)
+
+    def post(self, request):
+        device_id = request.data.get('device_id')
+        try:
+            device = Device.objects.get(device_id=device_id)
+
+            co  = float(request.data.get('co',  round(random.uniform(0, 100), 1)))
+            h2s = float(request.data.get('h2s', round(random.uniform(0, 50), 1)))
+            co2 = float(request.data.get('co2', round(random.uniform(300, 1000), 1)))
+
+            # 상태 판별
+            if co > 70 or h2s > 35 or co2 > 800:
+                s = 'danger'
+            elif co > 35 or h2s > 15 or co2 > 600:
+                s = 'caution'
+            else:
+                s = 'normal'
+
+            sd = SensorData.objects.create(
+                device=device, co=co, h2s=h2s, co2=co2,
+                status=s,
+            )
+            device.status = s
+            device.last_value = co
+            device.save()
+            return Response({'id': sd.id, 'status': s}, status=201)
+        except Device.DoesNotExist:
+            return Response({'error': '센서 없음'}, status=404)

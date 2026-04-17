@@ -111,12 +111,28 @@ class Alarm(models.Model):
     def __str__(self):
         return f"[{self.alarm_level}] {self.message[:40]}"
 
+class SensorData(models.Model):
+    """센서 측정값 히스토리"""
+    device      = models.ForeignKey(Device, on_delete=models.CASCADE, related_name='data')
+    co          = models.FloatField(null=True, blank=True)
+    h2s         = models.FloatField(null=True, blank=True)
+    co2         = models.FloatField(null=True, blank=True)
+    temperature = models.FloatField(null=True, blank=True)
+    status      = models.CharField(max_length=20, choices=STATUS_CHOICES, default='normal')
+    timestamp   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"{self.device.device_name} @ {self.timestamp}"
+        
 class MapImage(models.Model):
     """공장 평면도 이미지"""
     image       = models.ImageField(upload_to='maps/')
     name        = models.CharField(max_length=100, blank=True, default='지도')
-    width       = models.IntegerField(default=0)   # 이미지 가로 (px)
-    height      = models.IntegerField(default=0)   # 이미지 세로 (px)
+    width       = models.IntegerField(default=0)
+    height      = models.IntegerField(default=0)
     is_active   = models.BooleanField(default=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
@@ -124,4 +140,4 @@ class MapImage(models.Model):
         ordering = ['-uploaded_at']
 
     def __str__(self):
-        return f"{self.name} ({self.width}x{self.height})"
+        return f"{self.name} ({self.width}x{self.height})"        

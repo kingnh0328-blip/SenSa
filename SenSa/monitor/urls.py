@@ -7,7 +7,7 @@ monitor 앱 URL 설정
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
-
+from .views import SensorDataView
 
 # ============================================================
 # DRF Router — CRUD API 자동 생성
@@ -30,4 +30,6 @@ urlpatterns = [
 
     # 지오펜스 내부 판별 전용 API (표준 CRUD 외 커스텀 액션)
     path('api/check-geofence/', views.CheckGeofenceView.as_view(), name='check-geofence'),
+    
+    path('api/sensor-data/', SensorDataView.as_view(), name='sensor-data'),
 ]
